@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: avalon-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./public:/srv:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - avalon-network
+    depends_on:
+      - v2ray
+
+  v2ray:
+    image: v2fly/v2fly-core:latest
+    container_name: avalon-v2ray
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/etc/v2ray/config.json:ro
+    networks:
+      - avalon-network
+    command: ["v2ray", "-config=/etc/v2ray/config.json"]
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  avalon-network:
+    driver: bridge
