@@ -1,0 +1,7 @@
+# 此文件用于确保 data/ 目录被 git 跟踪
+# 
+# data/ 目录结构:
+# - avalon.db          - SQLite 数据库（.gitignore）
+# - caddy/data/        - Caddy 证书数据（.gitignore）
+# - caddy/config/      - Caddy 配置缓存（.gitignore）
+

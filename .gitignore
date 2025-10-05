@@ -6,8 +6,9 @@
 .env.*.local
 
 # ==================== 数据库和持久化数据 ====================
-data/
-*.db
+data/avalon.db
+data/avalon.db-*
+data/caddy/
 *.db-journal
 *.db-wal
 *.db-shm

@@ -4,23 +4,21 @@
     "access": "/var/log/v2ray/access.log",
     "error": "/var/log/v2ray/error.log"
   },
+  "dns": {
+    "servers": [
+        "localhost", 
+        "2606:4700:4700::64",
+        "2606:4700:4700::6400", 
+        "2606:4700:4700::1111",
+        "2606:4700:4700::1001"
+    ]
+  },
   "inbounds": [
     {
       "port": 10000,
       "protocol": "vless",
       "settings": {
-        "clients": [
-          {
-            "id": "550e8400-e29b-41d4-a716-446655440000",
-            "level": 0,
-            "email": "user1@avalon-tunnel.com"
-          },
-          {
-            "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-            "level": 0,
-            "email": "user2@avalon-tunnel.com"
-          }
-        ],
+        "clients": [],
         "decryption": "none"
       },
       "streamSettings": {
@@ -34,7 +32,10 @@
   "outbounds": [
     {
       "protocol": "freedom",
-      "settings": {}
+      "settings": {
+        "domainStrategy": "UseIP"
+      },
+      "tag": "direct"
     },
     {
       "protocol": "blackhole",
@@ -43,6 +44,7 @@
     }
   ],
   "routing": {
+    "domainStrategy": "IPIfNonMatch",
     "rules": [
       {
         "type": "field",

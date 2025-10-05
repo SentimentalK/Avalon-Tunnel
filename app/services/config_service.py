@@ -59,6 +59,16 @@ class ConfigService:
                 "access": "/var/log/v2ray/access.log",
                 "error": "/var/log/v2ray/error.log"
             },
+            "dns": {
+                "servers": [
+                    "localhost",              # 使用宿主机 DNS（已配置 DNS64）
+                    "2606:4700:4700::64",     # Cloudflare DNS64（关键！自动转换 A 记录为 AAAA）
+                    "2606:4700:4700::6400",   # Cloudflare DNS64 备用
+                    "2606:4700:4700::1111",   # Cloudflare IPv6
+                    "2606:4700:4700::1001"    # Cloudflare IPv6 备用
+                    # ❌ 不要添加任何 IPv4 地址（1.1.1.1, 8.8.8.8）
+                ]
+            },
             "inbounds": [
                 {
                     "port": v2ray_port,
@@ -85,7 +95,10 @@ class ConfigService:
             "outbounds": [
                 {
                     "protocol": "freedom",
-                    "settings": {}
+                    "settings": {
+                        "domainStrategy": "UseIP"  # 查询 A+AAAA，DNS64 自动转换 A 为 AAAA
+                    },
+                    "tag": "direct"
                 },
                 {
                     "protocol": "blackhole",
@@ -94,6 +107,7 @@ class ConfigService:
                 }
             ],
             "routing": {
+                "domainStrategy": "IPIfNonMatch",  # 规则不匹配时使用 V2Ray DNS 解析
                 "rules": [
                     {
                         "type": "field",
@@ -133,7 +147,7 @@ class ConfigService:
             json.dump(config, f, indent=2, ensure_ascii=False)
     
     def generate_caddyfile(self, domain: str, secret_path: str, 
-                          v2ray_port: int = 10000) -> str:
+                          v2ray_port: int = 10000, use_staging: bool = False) -> str:
         """
         生成 Caddyfile 配置
         
@@ -141,14 +155,25 @@ class ConfigService:
             domain: 域名
             secret_path: WebSocket 路径
             v2ray_port: V2Ray 监听端口
+            use_staging: 是否使用 Let's Encrypt Staging 环境（避免频率限制）
         
         Returns:
             Caddyfile 内容
         """
+        # TLS 配置（可选）
+        tls_config = ""
+        if use_staging:
+            tls_config = """
+    # 使用 Let's Encrypt Staging 环境（测试用，避免频率限制）
+    tls {
+        ca https://acme-staging-v02.api.letsencrypt.org/directory
+    }
+"""
+        
         caddyfile_content = f"""# Avalon Tunnel - Caddy Configuration
 # 自动 TLS 证书申请和反向代理配置
 
-{domain} {{
+{domain} {{{tls_config}
     # 根路径 - 伪装网站
     handle / {{
         root * /srv
@@ -215,6 +240,8 @@ class ConfigService:
             secret_path: 秘密路径
             v2ray_port: V2Ray 端口
         """
+        import os
+        
         print("🔄 正在生成配置文件...")
         
         # 生成 V2Ray 配置
@@ -222,10 +249,18 @@ class ConfigService:
         self.write_v2ray_config(v2ray_config)
         print(f"  ✅ V2Ray 配置已生成 ({len(users)} 个用户)")
         
+        # 检查是否使用 Staging 环境（通过环境变量控制）
+        use_staging = os.getenv('ACME_STAGING', '').lower() in ('1', 'true', 'yes')
+        
         # 生成 Caddyfile
-        caddyfile = self.generate_caddyfile(domain, secret_path, v2ray_port)
+        caddyfile = self.generate_caddyfile(domain, secret_path, v2ray_port, use_staging)
         self.write_caddyfile(caddyfile)
-        print(f"  ✅ Caddy 配置已生成")
+        
+        if use_staging:
+            print(f"  ✅ Caddy 配置已生成（使用 Staging 环境）")
+            print(f"  ⚠️  注意：Staging 证书不被浏览器信任，仅用于测试")
+        else:
+            print(f"  ✅ Caddy 配置已生成")
         
         print(f"  📍 域名: {domain}")
         print(f"  🔐 秘密路径: /{secret_path}")

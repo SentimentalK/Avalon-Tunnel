@@ -50,10 +50,6 @@ check-pre: config
 check-post:
 	@sudo -E PATH=$$PATH bash scripts/diagnose-post.sh
 
-# 完整检查（已弃用，改为分阶段）
-check: check-pre
-	@echo "⚠️  提示：现在使用 check-pre（启动前）和 check-post（启动后）"
-
 # 完整部署
 deploy: setup check-pre
 	@echo "🚀 启动服务..."
@@ -87,4 +83,4 @@ status:
 
 # 清理
 clean:
-	@docker compose down -v
+	@docker compose down

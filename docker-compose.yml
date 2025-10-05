@@ -13,6 +13,7 @@ services:
     environment:
       - DOMAIN=${DOMAIN:-your-domain.com}
       - SECRET_PATH=${SECRET_PATH:-}  # 留空，由 manager 自动生成
+      - ACME_STAGING=${ACME_STAGING:-0}  # 是否使用 Staging 环境
     env_file:
       - .env
     profiles:
@@ -39,17 +40,10 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./public:/srv:ro
-      - caddy_data:/data        # 持久化证书数据
-      - caddy_config:/config    # 持久化配置
+      - ./data/caddy/data:/data        # 持久化证书数据（本地目录）
+      - ./data/caddy/config:/config    # 持久化配置（本地目录）
     depends_on:
       v2ray:
         condition: service_started
     environment:
       - DOMAIN=${DOMAIN:-your-domain.com}
-
-# ==================== 持久化卷 ====================
-volumes:
-  caddy_data:
-    name: avalon_caddy_data
-  caddy_config:
-    name: avalon_caddy_config
