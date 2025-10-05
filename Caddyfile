@@ -1,14 +1,8 @@
 # Avalon Tunnel - Caddy Configuration
 # 自动 TLS 证书申请和反向代理配置
 
-# 替换为您的实际域名
+# 只为主域名申请证书
 {$DOMAIN:your-domain.com} {
-    # 启用自动 HTTPS
-    tls {
-        # 使用 Let's Encrypt 自动申请证书
-        # Caddy 会自动处理证书申请和续期
-    }
-
     # 根路径 - 伪装网站
     handle / {
         root * /srv
@@ -20,12 +14,13 @@
 
     # 秘密路径 - V2Ray WebSocket 代理
     # 请修改为您的自定义路径，建议使用随机字符串
+    # 使用 127.0.0.1 因为在 host 网络模式下
     handle /{$SECRET_PATH:avalon-secret-path} {
-        reverse_proxy v2ray:10000 {
+        reverse_proxy 127.0.0.1:10000 {
             header_up Host {host}
             header_up X-Real-IP {remote}
-            header_up X-Forwarded-For {remote}
-            header_up X-Forwarded-Proto {scheme}
+            header_up Upgrade {http.request.header.Upgrade}
+            header_up Connection {http.request.header.Connection}
         }
     }
 
@@ -52,16 +47,3 @@
     }
 }
 
-# 全局配置
-{
-    # 自动 HTTPS 配置
-    auto_https off
-    servers {
-        protocols h1 h2 h3
-    }
-    
-    # 日志级别
-    log {
-        level INFO
-    }
-}
