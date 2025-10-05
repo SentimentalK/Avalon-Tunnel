@@ -26,7 +26,7 @@
       "streamSettings": {
         "network": "ws",
         "wsSettings": {
-          "path": "/test"
+          "path": "/avalon-secret-path"
         }
       }
     }

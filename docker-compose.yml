@@ -1,24 +1,22 @@
 services:
   # ==================== Manager 服务 ====================
-  # 核心"大脑" - 负责初始化、配置生成和全链路诊断
-  # 只有当这个服务成功退出（exit 0）后，才会启动 v2ray 和 caddy
+  # 配置生成服务 - 通过 'docker compose run manager' 手动调用
+  # 或通过 Makefile 自动调用
   manager:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: avalon-manager
-    network_mode: host  # 需要访问宿主机网络进行诊断
-    privileged: true    # 需要特权模式以执行网络诊断
     volumes:
       - .:/app/config             # 挂载项目目录
       - ./data:/app/config/data   # 持久化数据目录
-      - /var/run/docker.sock:/var/run/docker.sock  # 访问 Docker (用于诊断)
     environment:
       - DOMAIN=${DOMAIN:-your-domain.com}
       - SECRET_PATH=${SECRET_PATH:-}  # 留空，由 manager 自动生成
     env_file:
       - .env
-    restart: "no"  # 只运行一次，不自动重启
+    profiles:
+      - tools  # 不会自动启动，需要手动运行
 
   # ==================== V2Ray 服务 ====================
   # 核心代理服务
@@ -29,13 +27,6 @@ services:
     volumes:
       - ./config.json:/etc/v2ray/config.json:ro
     network_mode: host
-    dns:
-      - 169.254.169.254
-      - 8.8.8.8      # 使用公共 DNS (修复容器 DNS 问题)
-      - 8.8.4.4
-    depends_on:
-      manager:
-        condition: service_completed_successfully  # 只有 manager 成功才启动
     command: ["run", "-c", "/etc/v2ray/config.json"]
 
   # ==================== Caddy 服务 ====================
@@ -45,18 +36,12 @@ services:
     container_name: avalon-caddy
     restart: unless-stopped
     network_mode: host
-    dns:
-      - 169.254.169.254
-      - 8.8.8.8
-      - 8.8.4.4
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./public:/srv:ro
       - caddy_data:/data        # 持久化证书数据
       - caddy_config:/config    # 持久化配置
     depends_on:
-      manager:
-        condition: service_completed_successfully
       v2ray:
         condition: service_started
     environment:

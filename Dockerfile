@@ -1,19 +1,10 @@
 # Avalon Tunnel - Manager 服务 Dockerfile
-# 构建智能配置与诊断系统
+# 轻量级配置生成服务
 
-FROM python:3.11-slim
+FROM python:3.11-alpine
 
 LABEL maintainer="Avalon Tunnel Team"
-LABEL description="Avalon Tunnel Manager - 智能配置与诊断系统"
-
-# 安装系统依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash \
-    curl \
-    dnsutils \
-    netcat-traditional \
-    iproute2 \
-    && rm -rf /var/lib/apt/lists/*
+LABEL description="Avalon Tunnel Manager - 配置生成服务"
 
 # 设置工作目录
 WORKDIR /app

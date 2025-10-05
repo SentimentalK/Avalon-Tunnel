@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Avalon Tunnel - 主入口程序
-负责编排整个启动流程：初始化 → 配置生成 → 诊断 → 启动服务
+Avalon Tunnel - 配置管理服务
+负责：初始化数据库 → 生成配置文件
 """
 
 import os
@@ -13,11 +13,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.database import Database
 from app.services import ConfigService
-from app.diagnostics import DiagnosticService
 
 
 class AvalonTunnelManager:
-    """Avalon Tunnel 管理器 - 系统的大脑"""
+    """Avalon Tunnel 配置管理器"""
     
     def __init__(self, base_dir: str = "/app/config"):
         """
@@ -31,43 +30,26 @@ class AvalonTunnelManager:
         # 初始化各个模块
         self.db = Database(str(self.base_dir / "data" / "avalon.db"))
         self.config_service = ConfigService(str(self.base_dir))
-        self.diagnostic_service = DiagnosticService(str(self.base_dir))
     
     def print_header(self):
         """打印启动横幅"""
         print("\n" + "=" * 70)
-        print("🚀 Avalon Tunnel - 智能配置与诊断系统")
+        print("🚀 Avalon Tunnel - 配置生成服务")
         print("=" * 70)
         print()
     
     def check_prerequisites(self) -> bool:
         """
-        检查前置条件
+        检查前置条件（.env 已在 Makefile 检查过）
         
         Returns:
             是否满足前置条件
         """
-        print("📋 阶段 1: 前置条件检查")
+        print("📋 阶段 1: 环境检查")
         print("-" * 70)
         
-        # 检查 .env 文件
-        env_file = self.base_dir / ".env"
-        if not env_file.exists():
-            print("❌ 错误: .env 文件不存在")
-            print("   请复制 env.example 为 .env 并配置您的域名:")
-            print(f"   cp {self.base_dir}/env.example {self.base_dir}/.env")
-            return False
-        
-        print(f"✅ 找到配置文件: .env")
-        
-        # 检查域名配置
-        domain = os.getenv('DOMAIN', '')
-        if not domain or domain == 'your-domain.com':
-            print("❌ 错误: 未配置域名")
-            print("   请在 .env 文件中设置 DOMAIN 为您的真实域名")
-            return False
-        
-        print(f"✅ 域名配置: {domain}")
+        domain = os.getenv('DOMAIN', 'your-domain.com')
+        print(f"✅ 域名: {domain}")
         print()
         
         return True
@@ -156,60 +138,23 @@ class AvalonTunnelManager:
             traceback.print_exc()
             return False
     
-    def run_diagnostics(self) -> bool:
-        """
-        运行全链路诊断
-        
-        Returns:
-            诊断是否通过
-        """
-        print("🔍 阶段 4: 全链路诊断")
-        print("-" * 70)
-        print()
-        
-        # 获取配置参数
-        domain = os.getenv('DOMAIN', 'your-domain.com')
-        secret_path = self.db.get_setting('secret_path')
-        v2ray_port = int(self.db.get_setting('v2ray_port') or 10000)
-        
-        # 运行诊断
-        success, output = self.diagnostic_service.run_diagnostics(
-            domain=domain,
-            secret_path=secret_path,
-            v2ray_port=v2ray_port,
-            realtime_output=True
-        )
-        
-        return success
-    
-    def display_summary(self, success: bool):
-        """
-        显示部署总结
-        
-        Args:
-            success: 是否部署成功
-        """
+    def display_summary(self):
+        """显示配置生成摘要"""
         print("\n" + "=" * 70)
-        print("📊 部署总结")
+        print("📊 配置生成完成")
         print("=" * 70)
         
-        if success:
-            print("✅ 所有检查通过，准备启动核心服务...")
-            print()
-            
-            # 显示用户连接信息
-            domain = os.getenv('DOMAIN', 'your-domain.com')
-            secret_path = self.db.get_setting('secret_path')
-            users = self.db.get_all_users(enabled_only=True)
-            
-            print(f"🌐 服务地址: https://{domain}")
-            print(f"🔐 秘密路径: /{secret_path}")
-            print(f"👥 启用用户: {len(users)}")
-            print()
-            
-            print("🔗 客户端连接链接:")
+        domain = os.getenv('DOMAIN', 'your-domain.com')
+        secret_path = self.db.get_setting('secret_path')
+        users = self.db.get_all_users(enabled_only=True)
+        
+        print(f"\n🌐 域名: {domain}")
+        print(f"🔐 秘密路径: /{secret_path}")
+        print(f"👥 启用用户: {len(users)}")
+        
+        if users:
+            print(f"\n🔗 客户端连接信息:")
             print("-" * 70)
-            
             for user in users:
                 link = self.config_service.generate_vless_link(
                     uuid=user['uuid'],
@@ -219,24 +164,16 @@ class AvalonTunnelManager:
                 )
                 print(f"\n📧 {user['email']}")
                 print(f"🆔 {user['uuid']}")
-                print(f"🔗 {link}")
-            
-            print()
-            print("=" * 70)
-            print("✅ Manager 服务完成，Docker Compose 将启动 V2Ray 和 Caddy")
-            print("=" * 70)
+                print(f"{link}")
         
-        else:
-            print("❌ 检查失败，服务不会启动")
-            print()
-            print("🔧 请根据上方的错误信息进行修复，然后重新运行:")
-            print("   docker compose up --force-recreate")
-            print()
-            print("=" * 70)
+        print("\n" + "=" * 70)
+        print("✅ 配置已生成")
+        print("=" * 70)
+        print()
     
     def run(self) -> int:
         """
-        运行完整的启动流程
+        运行配置生成流程
         
         Returns:
             退出码 (0: 成功, 非0: 失败)
@@ -255,14 +192,10 @@ class AvalonTunnelManager:
         if not self.generate_configs():
             return 1
         
-        # 阶段 4: 全链路诊断
-        diagnostic_passed = self.run_diagnostics()
-        
         # 显示总结
-        self.display_summary(diagnostic_passed)
+        self.display_summary()
         
-        # 返回退出码
-        return 0 if diagnostic_passed else 1
+        return 0
 
 
 def main():
@@ -276,11 +209,6 @@ def main():
         '--base-dir',
         default='/app/config',
         help='项目根目录 (默认: /app/config)'
-    )
-    parser.add_argument(
-        '--skip-diagnostics',
-        action='store_true',
-        help='跳过诊断步骤（仅用于调试）'
     )
     
     args = parser.parse_args()

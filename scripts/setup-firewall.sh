@@ -78,3 +78,17 @@ Docker 网络转发和 NAT 已配置（IPv4）
   sudo docker run --rm alpine sh -c 'apk add --no-cache curl && curl -I https://www.google.com'
 
 EOF
+
+# 配置 DNS64（用于访问 IPv4 网站）
+echo "🌐 配置 DNS64 以支持访问 IPv4-only 网站..."
+mkdir -p /etc/systemd/resolved.conf.d
+cat > /etc/systemd/resolved.conf.d/dns64.conf << 'EOF'
+[Resolve]
+DNS=2606:4700:4700::64 2606:4700:4700::6400
+FallbackDNS=2606:4700:4700::1111 2606:4700:4700::1001
+EOF
+
+systemctl restart systemd-resolved
+
+echo "   ✅ DNS64 配置完成"
+
