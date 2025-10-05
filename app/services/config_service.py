@@ -237,13 +237,9 @@ class ConfigService:
         reverse_proxy 127.0.0.1:8000
     }}
     
-    # 根路径 - 伪装网站（默认）
-    handle / {{
-        root * /srv
-        file_server
-        header Cache-Control "no-cache, no-store, must-revalidate"
-        header Pragma "no-cache"
-        header Expires "0"
+    # 根路径和所有其他路径 - 伪装网站（动态流量生成）
+    handle /* {{
+        reverse_proxy 127.0.0.1:8000
     }}
 
     # 安全头设置

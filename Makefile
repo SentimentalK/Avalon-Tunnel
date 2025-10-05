@@ -72,7 +72,7 @@ deploy: setup check-pre
 	@make check-post
 	@echo ""
 	@echo "🚀 启动 API 服务器..."
-	@docker compose --profile api up -d api
+	@docker compose --profile api up -d --build api
 	@echo ""
 	@echo "✅ 部署完成！"
 	@echo "📖 API 文档: http://localhost:8000/docs"

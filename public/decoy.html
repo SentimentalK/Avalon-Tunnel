@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beta Access - Private Media Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: #fff;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* 全屏视频背景 */
+        #video-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+            opacity: 0.6;
+        }
+        
+        /* 遮罩层 */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 1;
+        }
+        
+        /* 内容容器 */
+        .container {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Access Gate */
+        #access-gate {
+            background: rgba(30, 30, 30, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 60px 40px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        #access-gate h2 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            color: #00d4ff;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+        
+        #access-gate p {
+            font-size: 1rem;
+            margin-bottom: 30px;
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.6;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .input-group input {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s;
+        }
+        
+        .input-group input:focus {
+            border-color: #00d4ff;
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+        }
+        
+        .input-group button {
+            padding: 15px 40px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #00d4ff, #0099cc);
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .input-group button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.4);
+        }
+        
+        .hint {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.85rem;
+        }
+        
+        /* 聊天容器（居中悬浮） */
+        #chat-room {
+            display: none;
+            max-width: 600px;
+            width: 90%;
+        }
+        
+        .chat-header {
+            background: rgba(0, 212, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 15px 15px 0 0;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .chat-header h2 {
+            color: #00d4ff;
+            font-size: 1.3rem;
+            margin-bottom: 10px;
+        }
+        
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 15px;
+            background: rgba(0, 255, 157, 0.1);
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff9d;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .chat-container {
+            background: rgba(30, 30, 30, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: none;
+            border-radius: 0 0 15px 15px;
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+        }
+        
+        .chat-messages {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .chat-message {
+            padding: 12px 16px;
+            background: rgba(0, 212, 255, 0.05);
+            border-left: 3px solid #00d4ff;
+            border-radius: 8px;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .chat-message .user {
+            font-weight: 600;
+            color: #00d4ff;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .chat-message .text {
+            color: rgba(255, 255, 255, 0.85);
+            line-height: 1.5;
+            font-size: 0.95rem;
+        }
+        
+        /* Scrollbar */
+        .chat-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .chat-container::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        
+        .chat-container::-webkit-scrollbar-thumb {
+            background: rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+        }
+        
+        @media (max-width: 768px) {
+            #access-gate {
+                padding: 40px 20px;
+            }
+            
+            #access-gate h2 {
+                font-size: 1.5rem;
+            }
+            
+            .input-group {
+                flex-direction: column;
+            }
+            
+            .chat-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 全屏视频背景 -->
+    <video id="video-background" autoplay muted loop playsinline></video>
+    
+    <!-- 遮罩层 -->
+    <div class="overlay"></div>
+    
+    <div class="container">
+        <!-- Access Gate -->
+        <div id="access-gate">
+            <h2>🔐 Beta Access Required</h2>
+            <p>This is a private media streaming platform in beta testing.<br>
+            Enter your access code to continue.</p>
+            
+            <div class="input-group">
+                <input type="text" id="access-code" placeholder="Enter access code" value="/MwH1HvttOawqljoOZFIYImPi2adY0CLG" readonly>
+                <button id="access-btn">Enter</button>
+            </div>
+            
+            <div class="hint">
+                💡 This is a private beta platform for testing purposes.
+            </div>
+        </div>
+        
+        <!-- Chat Room -->
+        <div id="chat-room">
+            <div class="chat-header">
+                <h2>💬 Live Data Channel</h2>
+                <div class="status">
+                    <div class="status-dot"></div>
+                    <span id="status-text">Connected</span>
+                </div>
+            </div>
+            
+            <div class="chat-container">
+                <div class="chat-messages" id="chat-messages"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    (function() {
+        // DOM Elements
+        const accessGate = document.getElementById('access-gate');
+        const chatRoom = document.getElementById('chat-room');
+        const accessCodeInput = document.getElementById('access-code');
+        const accessBtn = document.getElementById('access-btn');
+        const videoBackground = document.getElementById('video-background');
+        const statusText = document.getElementById('status-text');
+        const chatMessages = document.getElementById('chat-messages');
+        
+        // State
+        let sseConnection = null;
+        let currentPath = null;
+        
+        // Event Listeners
+        accessBtn.addEventListener('click', enterChatRoom);
+        accessCodeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') enterChatRoom();
+        });
+        
+        function enterChatRoom() {
+            const code = accessCodeInput.value.trim();
+            const VALID_CODE = '/MwH1HvttOawqljoOZFIYImPi2adY0CLG';
+            
+            // 只接受这个固定的 key
+            if (code !== VALID_CODE) {
+                alert('Invalid access code.');
+                return;
+            }
+            
+            currentPath = code;
+            
+            // Update URL without reload
+            history.pushState({path: code}, '', code);
+            
+            // Switch view
+            accessGate.style.display = 'none';
+            chatRoom.style.display = 'block';
+            
+            // Start streaming
+            initStream(code);
+            
+            statusText.textContent = 'Connected';
+        }
+        
+        function initStream(path) {
+            // 1. 启动持续视频流（每次播放完自动加载"下一个"）
+            loadNextVideo();
+            
+            // 2. 启动聊天流（SSE）
+            initChatStream(path);
+        }
+        
+        function loadNextVideo() {
+            // 使用时间戳作为 segment_id，确保每次都是"新视频"
+            const segmentId = Date.now();
+            videoBackground.src = `/stream/${segmentId}.mp4`;
+            
+            // 视频播放完后，自动加载下一个
+            videoBackground.onended = () => {
+                console.log('Video ended, loading next segment...');
+                loadNextVideo();
+            };
+            
+            // 视频出错时，重试
+            videoBackground.onerror = (e) => {
+                console.error('Video error:', e);
+                setTimeout(loadNextVideo, 2000);
+            };
+        }
+        
+        // Chat Stream (SSE)
+        function initChatStream(path) {
+            if (sseConnection) return;
+            
+            sseConnection = new EventSource(path);
+            
+            sseConnection.onopen = () => {
+                addChatMessage('System', 'Data channel connected');
+            };
+            
+            sseConnection.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    addChatMessage(data.user, data.message);
+                } catch (e) {
+                    console.error('SSE parse error:', e);
+                }
+            };
+            
+            sseConnection.onerror = (error) => {
+                console.error('SSE error:', error);
+                statusText.textContent = 'Connection error';
+                sseConnection.close();
+                sseConnection = null;
+                
+                // Retry after 5 seconds
+                setTimeout(() => initChatStream(path), 5000);
+            };
+        }
+        
+        function addChatMessage(user, text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'chat-message';
+            messageDiv.innerHTML = `
+                <div class="user">${user}</div>
+                <div class="text">${text}</div>
+            `;
+            chatMessages.appendChild(messageDiv);
+            
+            // Auto-scroll
+            chatMessages.parentElement.scrollTop = chatMessages.parentElement.scrollHeight;
+            
+            // Keep only last 30 messages
+            while (chatMessages.children.length > 30) {
+                chatMessages.removeChild(chatMessages.firstChild);
+            }
+        }
+        
+        // Handle direct URL access
+        function handleInitialLoad() {
+            const path = window.location.pathname;
+            const VALID_CODE = '/MwH1HvttOawqljoOZFIYImPi2adY0CLG';
+            
+            // 只接受这个固定的 key
+            if (path === VALID_CODE) {
+                accessCodeInput.value = path;
+                enterChatRoom();
+            }
+        }
+        
+        // Initialize
+        handleInitialLoad();
+    })();
+    </script>
+</body>
+</html>

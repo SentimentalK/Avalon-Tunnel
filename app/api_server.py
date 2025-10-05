@@ -11,13 +11,20 @@ from pathlib import Path
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from sse_starlette.sse import EventSourceResponse
 
 from app.database import Database
 from app.services import ConfigService
 from app.api.routes import router, init_services
+
+import time
+import random
+import asyncio
+from typing import AsyncGenerator
 
 
 # 创建 FastAPI 应用
@@ -37,7 +44,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # 启动事件：初始化服务
 @app.on_event("startup")
@@ -82,22 +88,161 @@ async def shutdown_event():
     print("🛑 Avalon Tunnel API 服务器正在关闭...")
 
 
-# 注册路由
+# 注册 API 路由
 app.include_router(router)
 
 
-# 根路径
-@app.get("/")
-async def root():
+# ==================== 伪装流量系统 ====================
+
+# 配置路径
+BASE_DIR = Path(os.getenv('BASE_DIR', '.')).resolve()
+PUBLIC_DIR = BASE_DIR / 'public'
+VIDEO_FILE = PUBLIC_DIR / 'video.mp4'
+VIDEO_FILE_2 = PUBLIC_DIR / 'video2.mp4'  # 第二个视频
+CHAT_CORPUS_FILE = PUBLIC_DIR / 'chat_corpus.txt'
+
+# 加载聊天语料库
+CHAT_MESSAGES = [
+    "Hey, anyone online?",
+    "Just finished watching that video",
+    "This platform is pretty cool",
+    "Great content today!",
+    "Thanks for the invite",
+]
+
+if CHAT_CORPUS_FILE.exists():
+    try:
+        with open(CHAT_CORPUS_FILE, 'r', encoding='utf-8') as f:
+            custom_messages = [line.strip() for line in f if line.strip()]
+            if custom_messages:
+                CHAT_MESSAGES = custom_messages
+    except Exception:
+        pass
+
+
+# 固定的伪装路径
+DECOY_PATH = "MwH1HvttOawqljoOZFIYImPi2adY0CLG"
+
+
+@app.get("/stream/{segment_id}.mp4")
+async def serve_video_segment(segment_id: str, request: Request):
     """
-    根路径，返回 API 信息
+    视频分段服务 - 每次返回同一个视频，但浏览器认为是新的
+    segment_id 是时间戳，确保每次请求都是"新视频"
     """
-    return {
-        "service": "Avalon Tunnel API",
-        "version": "2.0.0",
-        "docs": "/docs",
-        "health": "/api/health"
-    }
+    if not VIDEO_FILE.exists():
+        return Response(content="Video not found", status_code=404)
+    
+    file_size = VIDEO_FILE.stat().st_size
+    range_header = request.headers.get('range')
+    
+    if range_header:
+        # 处理 Range 请求
+        range_match = range_header.replace('bytes=', '').split('-')
+        start = int(range_match[0]) if range_match[0] else 0
+        end = int(range_match[1]) if len(range_match) > 1 and range_match[1] else file_size - 1
+        
+        def iterfile():
+            with open(VIDEO_FILE, 'rb') as f:
+                f.seek(start)
+                remaining = end - start + 1
+                chunk_size = 64 * 1024  # 64KB chunks
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+        
+        return StreamingResponse(
+            iterfile(),
+            media_type="video/mp4",
+            status_code=206,
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(end - start + 1),
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            }
+        )
+    else:
+        # 完整文件请求
+        def iterfile():
+            with open(VIDEO_FILE, 'rb') as f:
+                chunk_size = 64 * 1024
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+        
+        return StreamingResponse(
+            iterfile(),
+            media_type="video/mp4",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(file_size),
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            }
+        )
+
+
+@app.get("/{path:path}")
+async def unified_decoy_endpoint(path: str = "", request: Request = None):
+    """
+    统一的伪装端点 - 只有一个路径，无参数
+    
+    - / : 返回主页 (decoy.html)
+    - /MwH1HvttOawqljoOZFIYImPi2adY0CLG : 返回 SSE 流（聊天消息）
+    
+    注意：与真实 VPN 流量保持一致，不使用任何 query 参数
+    """
+    # API 路径已被 router 处理，不会到这里
+    
+    # 根路径 - 返回主页
+    if not path or path == "":
+        decoy_html = PUBLIC_DIR / 'decoy.html'
+        if decoy_html.exists():
+            return FileResponse(decoy_html)
+        return Response(content="Not Found", status_code=404)
+    
+    # 检查是否是固定的伪装路径
+    if path == DECOY_PATH:
+        # 检查是否是 SSE 请求（通过 Accept header）
+        accept = request.headers.get('accept', '') if request else ''
+        
+        if 'text/event-stream' in accept:
+            # SSE 请求 - 返回聊天流（长间隔）
+            async def generate_chat_events():
+                import json
+                users = ['Alice', 'Bob', 'Charlie', 'Diana']
+                
+                while True:
+                    # 随机间隔 1-300 秒（1-5 分钟）
+                    wait_seconds = random.randint(1, 300)
+                    await asyncio.sleep(wait_seconds)
+                    
+                    # SSE 格式：必须是 data 字段
+                    event_data = {
+                        "user": random.choice(users),
+                        "message": random.choice(CHAT_MESSAGES),
+                        "timestamp": int(time.time())
+                    }
+                    yield {"data": json.dumps(event_data)}
+            
+            return EventSourceResponse(generate_chat_events())
+        else:
+            # 普通 HTTP 请求 - 返回 HTML 页面
+            decoy_html = PUBLIC_DIR / 'decoy.html'
+            if decoy_html.exists():
+                return FileResponse(decoy_html)
+    
+    # 其他路径，返回 404
+    return Response(content="Not Found", status_code=404)
 
 
 # 全局异常处理

@@ -4,6 +4,7 @@
 # API 服务器
 fastapi==0.115.0
 uvicorn==0.32.0
+sse-starlette==2.0.0
 
 # 数据验证
 pydantic==2.9.0
