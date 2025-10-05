@@ -1,6 +1,6 @@
 """
-Avalon Tunnel - API 模块 (第二阶段)
+Avalon Tunnel - REST API
+提供用户管理、配置管理和设备追踪的 HTTP API
 """
 
-# 未来将在这里实现 Flask API
-
+__all__ = []

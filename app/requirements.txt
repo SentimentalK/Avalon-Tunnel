@@ -1,10 +1,15 @@
-# Avalon Tunnel - Python 依赖
+# Avalon Tunnel - Python Dependencies
+# 共享依赖：CLI (main.py) 和 API (api_server.py) 都使用
 
-# 核心依赖 (当前阶段只需要标准库)
-# Python 3.9+ 的标准库已足够支持当前功能
+# API 服务器
+fastapi==0.115.0
+uvicorn==0.32.0
 
-# 未来 API 阶段需要的依赖（暂时注释）
-# flask>=2.3.0
-# flask-cors>=4.0.0
-# gunicorn>=21.0.0
+# 数据验证
+pydantic==2.9.0
+email-validator==2.1.0
 
+# 环境变量
+python-dotenv==1.0.0
+
+# SQLite 是 Python 内置的，不需要额外安装

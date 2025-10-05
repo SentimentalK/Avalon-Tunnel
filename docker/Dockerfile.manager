@@ -1,0 +1,17 @@
+# Avalon Tunnel - Manager 容器（一次性配置任务）
+FROM python:3.11-slim
+
+WORKDIR /app/config
+
+# 安装 Python 依赖（Manager 只需要基础依赖，不需要 FastAPI）
+RUN pip install python-dotenv
+
+# 复制应用代码
+COPY app/ /app/config/app/
+
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1
+ENV BASE_DIR=/app/config
+
+# 默认命令：运行配置生成
+CMD ["python3", "-m", "app.main"]

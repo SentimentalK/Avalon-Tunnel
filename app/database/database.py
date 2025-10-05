@@ -67,13 +67,14 @@ class Database:
     
     # ==================== 用户管理 ====================
     
-    def create_user(self, email: str, user_uuid: Optional[str] = None, 
+    def create_user(self, email: str, secret_path: str, user_uuid: Optional[str] = None, 
                    level: int = 0, notes: str = "") -> Dict:
         """
         创建新用户
         
         Args:
             email: 用户邮箱
+            secret_path: 用户专属秘密路径（必须提供）
             user_uuid: 用户 UUID（如果不提供则自动生成）
             level: 用户等级
             notes: 备注信息
@@ -87,18 +88,18 @@ class Database:
         conn = self._get_connection()
         try:
             cursor = conn.execute(
-                "INSERT INTO users (uuid, email, level, notes) VALUES (?, ?, ?, ?)",
-                (user_uuid, email, level, notes)
+                "INSERT INTO users (uuid, email, secret_path, level, notes) VALUES (?, ?, ?, ?, ?)",
+                (user_uuid, email, secret_path, level, notes)
             )
             conn.commit()
             
             # 记录审计日志
             self._log_audit("create_user", f"user:{cursor.lastrowid}", 
-                          f"Created user {email} with UUID {user_uuid}")
+                          f"Created user {email} with UUID {user_uuid}, path: /{secret_path}")
             
             return self.get_user_by_uuid(user_uuid)
         except sqlite3.IntegrityError as e:
-            raise ValueError(f"用户创建失败（UUID 或邮箱可能已存在）: {e}")
+            raise ValueError(f"用户创建失败（UUID、邮箱或路径可能已存在）: {e}")
         finally:
             conn.close()
     
@@ -154,9 +155,9 @@ class Database:
         
         Args:
             user_uuid: 用户 UUID
-            **kwargs: 要更新的字段（email, level, enabled, notes）
+            **kwargs: 要更新的字段（email, secret_path, level, enabled, notes）
         """
-        allowed_fields = ['email', 'level', 'enabled', 'notes']
+        allowed_fields = ['email', 'secret_path', 'level', 'enabled', 'notes']
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
         
         if not updates:
@@ -205,6 +206,90 @@ class Database:
     def enable_user(self, user_uuid: str) -> bool:
         """启用用户"""
         return self.update_user(user_uuid, enabled=1)
+    
+    def get_user_by_secret_path(self, secret_path: str) -> Optional[Dict]:
+        """根据秘密路径获取用户"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT * FROM users WHERE secret_path = ?", (secret_path,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+    
+    # ==================== 设备访问日志 ====================
+    
+    def record_device_access(self, user_id: int, user_agent: str, 
+                            source_ip: str, accessed_path: str) -> bool:
+        """
+        记录设备访问（如果已存在则更新访问时间和计数）
+        
+        Args:
+            user_id: 用户 ID
+            user_agent: User-Agent 字符串
+            source_ip: 源 IP 地址
+            accessed_path: 访问的路径
+        
+        Returns:
+            是否成功记录
+        """
+        conn = self._get_connection()
+        try:
+            # 使用 UNIQUE INDEX 特性：如果记录已存在则更新，否则插入
+            conn.execute(
+                """
+                INSERT INTO device_access_logs (user_id, user_agent, source_ip, accessed_path)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, user_agent, source_ip) DO UPDATE SET
+                    last_seen_at = CURRENT_TIMESTAMP,
+                    access_count = access_count + 1,
+                    accessed_path = ?
+                """,
+                (user_id, user_agent, source_ip, accessed_path, accessed_path)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"记录设备访问失败: {e}")
+            return False
+        finally:
+            conn.close()
+    
+    def get_user_devices(self, user_id: int) -> List[Dict]:
+        """获取某用户的所有设备访问记录"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                """
+                SELECT * FROM device_access_logs 
+                WHERE user_id = ? 
+                ORDER BY last_seen_at DESC
+                """,
+                (user_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+    
+    def get_all_device_access(self, limit: int = 100) -> List[Dict]:
+        """获取所有设备访问记录"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                """
+                SELECT d.*, u.email as user_email
+                FROM device_access_logs d
+                LEFT JOIN users u ON d.user_id = u.id
+                ORDER BY d.last_seen_at DESC
+                LIMIT ?
+                """,
+                (limit,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
     
     # ==================== 系统设置 ====================
     

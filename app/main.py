@@ -73,20 +73,34 @@ class AvalonTunnelManager:
         print("🔧 首次部署检测到，开始初始化...")
         
         try:
-            # 1. 生成秘密路径
-            secret_path = ConfigService.generate_secret_path(32)
-            self.db.set_setting('secret_path', secret_path, 'V2Ray WebSocket 秘密路径')
-            print(f"  ✅ 生成秘密路径: {secret_path[:16]}...{secret_path[-8:]}")
+            # 1. 检查默认用户
+            morgan_user = self.db.get_user_by_email('Morgan@avalon-tunnel.com')
             
-            # 2. 创建默认用户
-            default_user = self.db.create_user(
-                email="default@avalon-tunnel.com",
-                notes="系统默认用户（首次部署自动创建）"
-            )
-            print(f"  ✅ 创建默认用户: {default_user['email']}")
-            print(f"     UUID: {default_user['uuid']}")
+            if not morgan_user:
+                print(f"  ❌ 错误: 默认用户未找到（数据库初始化可能异常）")
+                return False
             
-            # 3. 标记为已初始化
+            # 2. 检查是否已有秘密路径（如果有，说明之前已初始化过）
+            if not morgan_user['secret_path'] or morgan_user['secret_path'] == '':
+                # 首次初始化：生成秘密路径
+                secret_path = ConfigService.generate_secret_path(32)
+                self.db.update_user(morgan_user['uuid'], secret_path=secret_path)
+                print(f"  ✅ 为默认用户生成秘密路径: /{secret_path[:16]}...{secret_path[-8:]}")
+                print(f"  💡 此路径将永久保存，重建容器不会改变")
+            else:
+                # 已有路径：跳过生成
+                print(f"  ✅ 默认用户已有秘密路径（复用）: /{morgan_user['secret_path'][:16]}...")
+                print(f"  💡 路径未改变，客户端无需更新配置")
+            
+            # 3. 显示默认用户信息
+            morgan_user = self.db.get_user_by_email('Morgan@avalon-tunnel.com')  # 重新获取
+            print(f"  ✅ 默认用户已就绪: {morgan_user['email']}")
+            print(f"     UUID: {morgan_user['uuid']}")
+            
+            # 4. 清理旧的全局 secret_path 设置（Phase 1 遗留）
+            self.db.set_setting('secret_path', '', '已弃用 - 改为每用户独立路径')
+            
+            # 5. 标记为已初始化
             self.db.mark_as_initialized()
             print("  ✅ 系统初始化完成")
             print()
@@ -112,20 +126,18 @@ class AvalonTunnelManager:
         try:
             # 从环境变量和数据库读取配置
             domain = os.getenv('DOMAIN', 'your-domain.com')
-            secret_path = self.db.get_setting('secret_path')
             v2ray_port = int(self.db.get_setting('v2ray_port') or 10000)
             
-            # 获取所有启用的用户
+            # 获取所有启用的用户（每个用户有自己的 secret_path）
             users = self.db.get_all_users(enabled_only=True)
             
             if not users:
                 print("⚠️  警告: 没有启用的用户，将生成空配置")
             
-            # 生成配置文件
+            # 生成配置文件（Phase 2: 多用户多路径）
             self.config_service.sync_all_configs(
                 domain=domain,
                 users=users,
-                secret_path=secret_path,
                 v2ray_port=v2ray_port
             )
             
@@ -145,11 +157,9 @@ class AvalonTunnelManager:
         print("=" * 70)
         
         domain = os.getenv('DOMAIN', 'your-domain.com')
-        secret_path = self.db.get_setting('secret_path')
         users = self.db.get_all_users(enabled_only=True)
         
         print(f"\n🌐 域名: {domain}")
-        print(f"🔐 秘密路径: /{secret_path}")
         print(f"👥 启用用户: {len(users)}")
         
         if users:
@@ -159,12 +169,13 @@ class AvalonTunnelManager:
                 link = self.config_service.generate_vless_link(
                     uuid=user['uuid'],
                     domain=domain,
-                    secret_path=secret_path,
+                    secret_path=user['secret_path'],  # 每个用户独立路径
                     email=user['email']
                 )
                 print(f"\n📧 {user['email']}")
                 print(f"🆔 {user['uuid']}")
-                print(f"{link}")
+                print(f"🔐 路径: /{user['secret_path'][:16]}...{user['secret_path'][-8:]}")
+                print(f"🔗 {link}")
         
         print("\n" + "=" * 70)
         print("✅ 配置已生成")

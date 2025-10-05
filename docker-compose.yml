@@ -1,26 +1,23 @@
 services:
-  # ==================== Manager 服务 ====================
-  # 配置生成服务 - 通过 'docker compose run manager' 手动调用
-  # 或通过 Makefile 自动调用
   manager:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/Dockerfile.manager
+      network: host
     container_name: avalon-manager
     volumes:
-      - .:/app/config             # 挂载项目目录
-      - ./data:/app/config/data   # 持久化数据目录
+      - .:/app/config
+      - ./data:/app/config/data
     environment:
       - DOMAIN=${DOMAIN:-your-domain.com}
-      - SECRET_PATH=${SECRET_PATH:-}  # 留空，由 manager 自动生成
-      - ACME_STAGING=${ACME_STAGING:-0}  # 是否使用 Staging 环境
+      - SECRET_PATH=${SECRET_PATH:-}
+      - ACME_STAGING=${ACME_STAGING:-0}
+      - BASE_DIR=/app/config
     env_file:
       - .env
     profiles:
-      - tools  # 不会自动启动，需要手动运行
+      - tools
 
-  # ==================== V2Ray 服务 ====================
-  # 核心代理服务
   v2ray:
     image: v2fly/v2fly-core:latest
     container_name: avalon-v2ray
@@ -30,8 +27,6 @@ services:
     network_mode: host
     command: ["run", "-c", "/etc/v2ray/config.json"]
 
-  # ==================== Caddy 服务 ====================
-  # 反向代理和 TLS 证书管理
   caddy:
     image: caddy:2-alpine
     container_name: avalon-caddy
@@ -40,10 +35,30 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./public:/srv:ro
-      - ./data/caddy/data:/data        # 持久化证书数据（本地目录）
-      - ./data/caddy/config:/config    # 持久化配置（本地目录）
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
     depends_on:
-      v2ray:
-        condition: service_started
+      - v2ray
     environment:
       - DOMAIN=${DOMAIN:-your-domain.com}
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+      network: host
+    container_name: avalon-api
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - .:/app/config
+      - ./data:/app/config/data
+      - ./scripts:/app/config/scripts
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOMAIN=${DOMAIN:-your-domain.com}
+      - BASE_DIR=/app/config
+    env_file:
+      - .env
+    profiles:
+      - api  # 不自动启动，在核心服务验证通过后再启动

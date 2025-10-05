@@ -40,19 +40,57 @@ class ConfigService:
         alphabet = string.ascii_letters + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(length))
     
-    def generate_v2ray_config(self, users: List[Dict], secret_path: str, 
-                             v2ray_port: int = 10000) -> Dict:
+    def generate_v2ray_config(self, users: List[Dict], v2ray_port_base: int = 10000) -> Dict:
         """
-        生成 V2Ray 配置
+        生成 V2Ray 配置（Phase 2: 每用户独立 inbound，UUID 和路径强绑定）
         
         Args:
-            users: 用户列表，每个用户包含 uuid, email, level
-            secret_path: WebSocket 路径
-            v2ray_port: V2Ray 监听端口
+            users: 用户列表，每个用户包含 uuid, email, level, secret_path
+            v2ray_port_base: V2Ray 起始端口（每个用户 +1）
         
         Returns:
             V2Ray 配置字典
+        
+        Security:
+            每个用户有独立的 inbound（端口 + 路径），确保：
+            - 用户 A 只能用 UUID-A + Path-A 连接
+            - 不能用 UUID-A + Path-B 连接（会被 V2Ray 拒绝）
         """
+        # 为每个启用的用户创建独立的 inbound
+        inbounds = []
+        port_offset = 0
+        
+        for user in users:
+            if not user.get('enabled', 1):
+                continue
+            
+            if not user.get('secret_path'):
+                print(f"  ⚠️  警告: 用户 {user['email']} 没有 secret_path，跳过")
+                continue
+            
+            inbounds.append({
+                "port": v2ray_port_base + port_offset,
+                "protocol": "vless",
+                "settings": {
+                    "clients": [
+                        {
+                            "id": user['uuid'],
+                            "level": user.get('level', 0),
+                            "email": user['email']
+                        }
+                    ],
+                    "decryption": "none"
+                },
+                "streamSettings": {
+                    "network": "ws",
+                    "wsSettings": {
+                        "path": f"/{user['secret_path']}"  # ✅ UUID 和路径绑定
+                    }
+                },
+                "tag": f"inbound-{user['email']}"
+            })
+            port_offset += 1
+        
         config = {
             "log": {
                 "loglevel": "warning",
@@ -69,29 +107,7 @@ class ConfigService:
                     # ❌ 不要添加任何 IPv4 地址（1.1.1.1, 8.8.8.8）
                 ]
             },
-            "inbounds": [
-                {
-                    "port": v2ray_port,
-                    "protocol": "vless",
-                    "settings": {
-                        "clients": [
-                            {
-                                "id": user['uuid'],
-                                "level": user.get('level', 0),
-                                "email": user['email']
-                            }
-                            for user in users if user.get('enabled', 1)
-                        ],
-                        "decryption": "none"
-                    },
-                    "streamSettings": {
-                        "network": "ws",
-                        "wsSettings": {
-                            "path": f"/{secret_path}"
-                        }
-                    }
-                }
-            ],
+            "inbounds": inbounds,
             "outbounds": [
                 {
                     "protocol": "freedom",
@@ -146,14 +162,14 @@ class ConfigService:
         with open(self.config_json, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
     
-    def generate_caddyfile(self, domain: str, secret_path: str, 
+    def generate_caddyfile(self, domain: str, users: List[Dict],
                           v2ray_port: int = 10000, use_staging: bool = False) -> str:
         """
-        生成 Caddyfile 配置
+        生成 Caddyfile 配置（Phase 2: 多用户多路径）
         
         Args:
             domain: 域名
-            secret_path: WebSocket 路径
+            users: 用户列表，每个用户包含 secret_path
             v2ray_port: V2Ray 监听端口
             use_staging: 是否使用 Let's Encrypt Staging 环境（避免频率限制）
         
@@ -170,28 +186,64 @@ class ConfigService:
     }
 """
         
+        # 为每个用户生成一个 handle 块，转发到对应的 V2Ray 端口
+        user_handles = ""
+        port_offset = 0
+        
+        for user in users:
+            if not user.get('enabled', 1) or not user.get('secret_path'):
+                continue
+            
+            user_port = v2ray_port + port_offset
+            user_handles += f"""
+    # 用户: {user['email']} ({user['uuid']})
+    # V2Ray 端口: {user_port}
+    handle /{user['secret_path']} {{
+        reverse_proxy 127.0.0.1:{user_port} {{
+            header_up Host {{host}}
+            header_up X-Real-IP {{remote}}
+            header_up X-Forwarded-For {{remote}}
+            header_up User-Agent {{http.request.header.User-Agent}}
+            header_up Upgrade {{http.request.header.Upgrade}}
+            header_up Connection {{http.request.header.Connection}}
+        }}
+    }}
+"""
+            port_offset += 1
+        
         caddyfile_content = f"""# Avalon Tunnel - Caddy Configuration
 # 自动 TLS 证书申请和反向代理配置
+# Phase 2: 多用户多路径支持 + API 反向代理
 
 {domain} {{{tls_config}
-    # 根路径 - 伪装网站
+{user_handles}
+    # API 管理接口 - 反向代理到本地 8000 端口
+    handle /api/* {{
+        reverse_proxy 127.0.0.1:8000
+    }}
+    
+    # API 文档 - Swagger UI
+    handle /docs {{
+        reverse_proxy 127.0.0.1:8000
+    }}
+    
+    # API 文档 - ReDoc
+    handle /redoc {{
+        reverse_proxy 127.0.0.1:8000
+    }}
+    
+    # API OpenAPI JSON
+    handle /openapi.json {{
+        reverse_proxy 127.0.0.1:8000
+    }}
+    
+    # 根路径 - 伪装网站（默认）
     handle / {{
         root * /srv
         file_server
         header Cache-Control "no-cache, no-store, must-revalidate"
         header Pragma "no-cache"
         header Expires "0"
-    }}
-
-    # 秘密路径 - V2Ray WebSocket 代理
-    # 使用 127.0.0.1 因为在 host 网络模式下
-    handle /{secret_path} {{
-        reverse_proxy 127.0.0.1:{v2ray_port} {{
-            header_up Host {{host}}
-            header_up X-Real-IP {{remote}}
-            header_up Upgrade {{http.request.header.Upgrade}}
-            header_up Connection {{http.request.header.Connection}}
-        }}
     }}
 
     # 安全头设置
@@ -210,9 +262,12 @@ class ConfigService:
         Cache-Control "no-cache, no-store, must-revalidate"
     }}
 
-    # 日志配置
+    # 日志配置（JSON 格式，包含 User-Agent 和 IP）
     log {{
-        output file /var/log/caddy/access.log
+        output file /var/log/caddy/access.log {{
+            roll_size 100mb
+            roll_keep 5
+        }}
         format json
     }}
 }}
@@ -230,14 +285,13 @@ class ConfigService:
             f.write(content)
     
     def sync_all_configs(self, domain: str, users: List[Dict], 
-                        secret_path: str, v2ray_port: int = 10000):
+                        v2ray_port: int = 10000):
         """
-        同步所有配置文件
+        同步所有配置文件（Phase 2: 多用户多路径）
         
         Args:
             domain: 域名
-            users: 用户列表
-            secret_path: 秘密路径
+            users: 用户列表（每个用户包含 uuid, email, secret_path）
             v2ray_port: V2Ray 端口
         """
         import os
@@ -245,26 +299,26 @@ class ConfigService:
         print("🔄 正在生成配置文件...")
         
         # 生成 V2Ray 配置
-        v2ray_config = self.generate_v2ray_config(users, secret_path, v2ray_port)
+        v2ray_config = self.generate_v2ray_config(users, v2ray_port)
         self.write_v2ray_config(v2ray_config)
         print(f"  ✅ V2Ray 配置已生成 ({len(users)} 个用户)")
         
         # 检查是否使用 Staging 环境（通过环境变量控制）
         use_staging = os.getenv('ACME_STAGING', '').lower() in ('1', 'true', 'yes')
         
-        # 生成 Caddyfile
-        caddyfile = self.generate_caddyfile(domain, secret_path, v2ray_port, use_staging)
+        # 生成 Caddyfile（多用户多路径）
+        caddyfile = self.generate_caddyfile(domain, users, v2ray_port, use_staging)
         self.write_caddyfile(caddyfile)
         
         if use_staging:
             print(f"  ✅ Caddy 配置已生成（使用 Staging 环境）")
             print(f"  ⚠️  注意：Staging 证书不被浏览器信任，仅用于测试")
         else:
-            print(f"  ✅ Caddy 配置已生成")
+            print(f"  ✅ Caddy 配置已生成 ({len(users)} 个独立路径)")
         
         print(f"  📍 域名: {domain}")
-        print(f"  🔐 秘密路径: /{secret_path}")
         print(f"  🔌 V2Ray 端口: {v2ray_port}")
+        print(f"  ⚠️  注意：V2Ray 需要重启才能应用配置，Caddy 自动热加载")
     
     def generate_vless_link(self, uuid: str, domain: str, secret_path: str,
                            email: str = "Avalon-Tunnel") -> str:

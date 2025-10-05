@@ -213,3 +213,34 @@ if is_ipv6 "$PUBLIC_IP"; then
   fi
 fi
 echo ""
+
+# --- 阶段 6: 系统网络优化 ---
+echo "--- 阶段 6: 系统网络优化 ---"
+
+# 检查 UDP buffer size（Caddy QUIC/HTTP3 需要）
+print_info "检查 UDP receive buffer size..."
+CURRENT_RMEM=$(sysctl -n net.core.rmem_max 2>/dev/null || echo "0")
+REQUIRED_RMEM=7340032  # 7 MB
+
+if [ "$CURRENT_RMEM" -lt "$REQUIRED_RMEM" ]; then
+  print_warning "UDP buffer size 过小 (当前: $((CURRENT_RMEM / 1024)) KB, 推荐: $((REQUIRED_RMEM / 1024)) KB)"
+  print_info "这会导致 Caddy 警告: 'failed to sufficiently increase receive buffer size'"
+  print_info "正在优化..."
+  
+  # 临时设置
+  sysctl -w net.core.rmem_max=$REQUIRED_RMEM > /dev/null 2>&1
+  sysctl -w net.core.wmem_max=$REQUIRED_RMEM > /dev/null 2>&1
+  
+  # 永久设置
+  if ! grep -q "net.core.rmem_max" /etc/sysctl.conf 2>/dev/null; then
+    echo "# Avalon Tunnel - UDP buffer optimization for QUIC" >> /etc/sysctl.conf
+    echo "net.core.rmem_max = $REQUIRED_RMEM" >> /etc/sysctl.conf
+    echo "net.core.wmem_max = $REQUIRED_RMEM" >> /etc/sysctl.conf
+    sysctl -p > /dev/null 2>&1
+  fi
+  
+  print_success "UDP buffer size 已优化为 $((REQUIRED_RMEM / 1024)) KB"
+else
+  print_success "UDP buffer size 已满足要求 ($((CURRENT_RMEM / 1024)) KB)"
+fi
+echo ""
