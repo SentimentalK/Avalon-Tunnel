@@ -1,0 +1,10 @@
+# Avalon Tunnel - Python 依赖
+
+# 核心依赖 (当前阶段只需要标准库)
+# Python 3.9+ 的标准库已足够支持当前功能
+
+# 未来 API 阶段需要的依赖（暂时注释）
+# flask>=2.3.0
+# flask-cors>=4.0.0
+# gunicorn>=21.0.0
+

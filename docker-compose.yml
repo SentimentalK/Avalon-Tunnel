@@ -1,39 +1,27 @@
 services:
-  # 配置初始化服务 - 在其他服务启动前验证配置
-  config-init:
+  # ==================== Manager 服务 ====================
+  # 核心"大脑" - 负责初始化、配置生成和全链路诊断
+  # 只有当这个服务成功退出（exit 0）后，才会启动 v2ray 和 caddy
+  manager:
     build:
       context: .
-      dockerfile: Dockerfile.config
-    container_name: avalon-config
+      dockerfile: Dockerfile
+    container_name: avalon-manager
+    network_mode: host  # 需要访问宿主机网络进行诊断
+    privileged: true    # 需要特权模式以执行网络诊断
     volumes:
-      - .:/app/config
-    working_dir: /app/config
+      - .:/app/config             # 挂载项目目录
+      - ./data:/app/config/data   # 持久化数据目录
+      - /var/run/docker.sock:/var/run/docker.sock  # 访问 Docker (用于诊断)
     environment:
       - DOMAIN=${DOMAIN:-your-domain.com}
-      - SECRET_PATH=${SECRET_PATH:-avalon-secret-path}
-    command: ["validate"]
+      - SECRET_PATH=${SECRET_PATH:-}  # 留空，由 manager 自动生成
+    env_file:
+      - .env
+    restart: "no"  # 只运行一次，不自动重启
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: avalon-caddy
-    restart: unless-stopped
-    network_mode: host
-    dns:
-      - 169.254.169.254
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./public:/srv:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      config-init:
-        condition: service_completed_successfully
-      v2ray:
-        condition: service_started
-    environment:
-      - DOMAIN=${DOMAIN:-your-domain.com}
-      - SECRET_PATH=${SECRET_PATH:-avalon-secret-path}
-
+  # ==================== V2Ray 服务 ====================
+  # 核心代理服务
   v2ray:
     image: v2fly/v2fly-core:latest
     container_name: avalon-v2ray
@@ -43,12 +31,40 @@ services:
     network_mode: host
     dns:
       - 169.254.169.254
+      - 8.8.8.8      # 使用公共 DNS (修复容器 DNS 问题)
+      - 8.8.4.4
     depends_on:
-      config-init:
-        condition: service_completed_successfully
+      manager:
+        condition: service_completed_successfully  # 只有 manager 成功才启动
     command: ["run", "-c", "/etc/v2ray/config.json"]
 
+  # ==================== Caddy 服务 ====================
+  # 反向代理和 TLS 证书管理
+  caddy:
+    image: caddy:2-alpine
+    container_name: avalon-caddy
+    restart: unless-stopped
+    network_mode: host
+    dns:
+      - 169.254.169.254
+      - 8.8.8.8
+      - 8.8.4.4
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./public:/srv:ro
+      - caddy_data:/data        # 持久化证书数据
+      - caddy_config:/config    # 持久化配置
+    depends_on:
+      manager:
+        condition: service_completed_successfully
+      v2ray:
+        condition: service_started
+    environment:
+      - DOMAIN=${DOMAIN:-your-domain.com}
+
+# ==================== 持久化卷 ====================
 volumes:
   caddy_data:
+    name: avalon_caddy_data
   caddy_config:
-
+    name: avalon_caddy_config
