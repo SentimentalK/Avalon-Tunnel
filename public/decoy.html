@@ -342,9 +342,16 @@
         }
         
         function loadNextVideo() {
-            // 使用时间戳作为 segment_id，确保每次都是"新视频"
-            const segmentId = Date.now();
-            videoBackground.src = `/stream/${segmentId}.mp4`;
+            // 生成随机的 32 位字符串，与 VPN 路径格式完全一致
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            let randomPath = '';
+            for (let i = 0; i < 32; i++) {
+                randomPath += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            
+            // URL 格式: /stream/<32位随机字符>
+            // 与 VPN 流量格式完全一致，无法区分！
+            videoBackground.src = `/stream/${randomPath}`;
             
             // 视频播放完后，自动加载下一个
             videoBackground.onended = () => {

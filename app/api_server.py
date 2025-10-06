@@ -124,11 +124,16 @@ if CHAT_CORPUS_FILE.exists():
 DECOY_PATH = "MwH1HvttOawqljoOZFIYImPi2adY0CLG"
 
 
-@app.get("/stream/{segment_id}.mp4")
+@app.get("/stream/{segment_id}")
 async def serve_video_segment(segment_id: str, request: Request):
     """
-    视频分段服务 - 每次返回同一个视频，但浏览器认为是新的
-    segment_id 是时间戳，确保每次请求都是"新视频"
+    伪装视频流服务 - 路径格式与 VPN 流量完全一致
+    
+    URL 格式: /stream/<32位随机字符>
+    - 如果 segment_id 匹配用户的 secret_path，Caddy 会转发给 V2Ray（VPN 流量）
+    - 如果不匹配，会到达这里，返回视频流（伪装流量）
+    
+    这样 VPN 流量和伪装流量的 URL 格式完全一致，无法区分！
     """
     if not VIDEO_FILE.exists():
         return Response(content="Video not found", status_code=404)

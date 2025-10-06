@@ -193,15 +193,15 @@ fi
 # --- 端到端测试 ---
 echo "--- 端到端链路测试 ---"
 
-# Phase 2: 从 Caddyfile 提取第一个用户的秘密路径
-FIRST_SECRET_PATH=$(grep -oP 'handle /\K[a-zA-Z0-9]+' Caddyfile 2>/dev/null | head -n 1)
+# Phase 2: 从 Caddyfile 提取第一个用户的秘密路径（新格式：/stream/<secret>）
+FIRST_SECRET_PATH=$(grep -oP 'handle /stream/\K[a-zA-Z0-9]+' Caddyfile 2>/dev/null | head -n 1)
 
 if [ -z "$FIRST_SECRET_PATH" ]; then
   print_fail "无法从 Caddyfile 读取秘密路径"
   print_info "Caddyfile 可能未正确生成，请运行 'make config'"
   FAIL_COUNT=$((FAIL_COUNT + 1))
 else
-  print_info "测试 WebSocket 升级: /$FIRST_SECRET_PATH"
+  print_info "测试 WebSocket 升级: /stream/$FIRST_SECRET_PATH"
   
   CURL_OUTPUT=$(curl -k -v --http1.1 \
     -H "Connection: Upgrade" \
@@ -210,7 +210,7 @@ else
     -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
     -H "Host: $DOMAIN" \
     --max-time 5 \
-    "https://127.0.0.1:443/$FIRST_SECRET_PATH" 2>&1)
+    "https://127.0.0.1:443/stream/$FIRST_SECRET_PATH" 2>&1)
 
 if echo "$CURL_OUTPUT" | grep -q "HTTP.*101"; then
   print_success "WebSocket 升级成功 (HTTP 101)！Caddy → V2Ray 链路正常。"
@@ -222,12 +222,12 @@ elif echo "$CURL_OUTPUT" | grep -q "SSL.*internal error"; then
   # 本地回环 TLS 测试失败是正常的，进行深度诊断确认实际状态
   print_info "本地 TLS 测试: 内部错误（回环测试限制）"
   
-  # 深度诊断：直接测试 V2Ray
+  # 深度诊断：直接测试 V2Ray（使用新的 /stream/ 前缀）
   print_info "深度诊断: 测试 V2Ray 服务..."
   INTERNAL_TEST=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 \
     -H "Upgrade: websocket" \
     -H "Connection: Upgrade" \
-    http://127.0.0.1:$V2RAY_PORT/$FIRST_SECRET_PATH 2>/dev/null || echo "000")
+    http://127.0.0.1:$V2RAY_PORT/stream/$FIRST_SECRET_PATH 2>/dev/null || echo "000")
   
   if [ "$INTERNAL_TEST" = "400" ] || [ "$INTERNAL_TEST" = "404" ]; then
     print_success "V2Ray 服务正常 (HTTP $INTERNAL_TEST)。"
@@ -285,7 +285,8 @@ print(user['secret_path'] if user else '')
 " 2>/dev/null)
       
       if [ -n "$user_path" ]; then
-        echo -e "${GREEN}🔗 连接:${NC} vless://${uuid}@${DOMAIN}:443?type=ws&security=tls&path=%2F${user_path}&host=${DOMAIN}&sni=${DOMAIN}#${email}"
+        # 新格式：/stream/<secret>，需要 URL 编码为 %2Fstream%2F
+        echo -e "${GREEN}🔗 连接:${NC} vless://${uuid}@${DOMAIN}:443?type=ws&security=tls&path=%2Fstream%2F${user_path}&host=${DOMAIN}&sni=${DOMAIN}#${email}"
       fi
       echo ""
     done <<< "$USER_INFO"
@@ -316,7 +317,7 @@ fi
 echo ""
 echo -e "${BLUE}💡 测试建议:${NC}"
 if [ -n "$FIRST_SECRET_PATH" ]; then
-  echo "   从外网测试: curl -I https://$DOMAIN/$FIRST_SECRET_PATH"
+  echo "   从外网测试: curl -I https://$DOMAIN/stream/$FIRST_SECRET_PATH"
 fi
 echo "   查看日志: docker compose logs"
 echo "=============================================="

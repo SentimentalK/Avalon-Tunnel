@@ -5,7 +5,7 @@ Avalon Tunnel - API 路由
 """
 
 import os
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from typing import List
 
 from .models import (
@@ -13,6 +13,7 @@ from .models import (
     UserResponse, CreateUserResponse, UserListResponse,
     ReloadConfigResponse, DeviceListResponse, ErrorResponse
 )
+from .auth import verify_api_token
 from ..database import Database
 from ..services import ConfigService
 from ..services.user_service import UserService
@@ -45,7 +46,7 @@ def init_services(database: Database, config_service: ConfigService, app_domain:
 # ==================== 用户管理 API ====================
 
 @router.post("/users", response_model=CreateUserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(request: CreateUserRequest):
+async def create_user(request: CreateUserRequest, authenticated: bool = Depends(verify_api_token)):
     """
     创建新用户
     
@@ -85,7 +86,7 @@ async def create_user(request: CreateUserRequest):
 
 
 @router.get("/users", response_model=UserListResponse)
-async def list_users(enabled_only: bool = False):
+async def list_users(enabled_only: bool = False, authenticated: bool = Depends(verify_api_token)):
     """
     获取所有用户列表
     
@@ -116,7 +117,7 @@ async def list_users(enabled_only: bool = False):
 
 
 @router.get("/users/{user_uuid}", response_model=UserResponse)
-async def get_user(user_uuid: str):
+async def get_user(user_uuid: str, authenticated: bool = Depends(verify_api_token)):
     """
     获取指定用户详情
     """
@@ -137,7 +138,7 @@ async def get_user(user_uuid: str):
 
 
 @router.put("/users/{user_uuid}", response_model=UserResponse)
-async def update_user(user_uuid: str, request: UpdateUserRequest):
+async def update_user(user_uuid: str, request: UpdateUserRequest, authenticated: bool = Depends(verify_api_token)):
     """
     更新用户信息
     
@@ -187,7 +188,7 @@ async def update_user(user_uuid: str, request: UpdateUserRequest):
 
 
 @router.delete("/users/{user_uuid}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_uuid: str):
+async def delete_user(user_uuid: str, authenticated: bool = Depends(verify_api_token)):
     """
     删除用户
     """
@@ -212,7 +213,7 @@ async def delete_user(user_uuid: str):
 # ==================== 配置管理 API ====================
 
 @router.post("/config/reload", response_model=ReloadConfigResponse)
-async def reload_config():
+async def reload_config(authenticated: bool = Depends(verify_api_token)):
     """
     重新生成配置文件并重启 V2Ray
     
@@ -244,7 +245,7 @@ async def reload_config():
 # ==================== 设备管理 API ====================
 
 @router.get("/devices", response_model=DeviceListResponse)
-async def list_all_devices(limit: int = 100):
+async def list_all_devices(limit: int = 100, authenticated: bool = Depends(verify_api_token)):
     """
     获取所有设备访问记录
     
@@ -267,7 +268,7 @@ async def list_all_devices(limit: int = 100):
 
 
 @router.get("/users/{user_uuid}/devices", response_model=DeviceListResponse)
-async def list_user_devices(user_uuid: str):
+async def list_user_devices(user_uuid: str, authenticated: bool = Depends(verify_api_token)):
     """
     获取指定用户的设备访问记录
     """

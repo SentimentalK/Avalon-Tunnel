@@ -84,7 +84,7 @@ class ConfigService:
                 "streamSettings": {
                     "network": "ws",
                     "wsSettings": {
-                        "path": f"/{user['secret_path']}"  # ✅ UUID 和路径绑定
+                        "path": f"/stream/{user['secret_path']}"  # ✅ UUID 和路径绑定
                     }
                 },
                 "tag": f"inbound-{user['email']}"
@@ -198,7 +198,7 @@ class ConfigService:
             user_handles += f"""
     # 用户: {user['email']} ({user['uuid']})
     # V2Ray 端口: {user_port}
-    handle /{user['secret_path']} {{
+    handle /stream/{user['secret_path']} {{
         reverse_proxy 127.0.0.1:{user_port} {{
             header_up Host {{host}}
             header_up X-Real-IP {{remote}}
@@ -335,7 +335,7 @@ class ConfigService:
         params = {
             'type': 'ws',
             'security': 'tls',
-            'path': f'/{secret_path}',
+            'path': f'/stream/{secret_path}',  # 新格式：/stream/<secret>
             'host': domain,
             'sni': domain
         }
