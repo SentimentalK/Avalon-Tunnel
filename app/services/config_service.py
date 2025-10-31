@@ -42,14 +42,18 @@ class ConfigService:
     
     def generate_v2ray_config(self, users: List[Dict], v2ray_port_base: int = 10000) -> Dict:
         """
-        生成 V2Ray 配置（Phase 2: 每用户独立 inbound，UUID 和路径强绑定）
+        生成 V2Ray inbounds 配置（仅生成用户列表）
         
         Args:
             users: 用户列表，每个用户包含 uuid, email, level, secret_path
             v2ray_port_base: V2Ray 起始端口（每个用户 +1）
         
         Returns:
-            V2Ray 配置字典
+            只包含 inbounds 的配置字典
+        
+        Note:
+            此方法只生成 inbounds，其他所有配置（dns, outbounds, log, routing）
+            都从现有的 config.json 读取并保留
         
         Security:
             每个用户有独立的 inbound（端口 + 路径），确保：
@@ -91,76 +95,61 @@ class ConfigService:
             })
             port_offset += 1
         
-        config = {
-            "log": {
-                "loglevel": "warning",
-                "access": "/var/log/v2ray/access.log",
-                "error": "/var/log/v2ray/error.log"
-            },
-            "dns": {
-                "servers": [
-                    "localhost",              # 使用宿主机 DNS（已配置 DNS64）
-                    "2606:4700:4700::64",     # Cloudflare DNS64（关键！自动转换 A 记录为 AAAA）
-                    "2606:4700:4700::6400",   # Cloudflare DNS64 备用
-                    "2606:4700:4700::1111",   # Cloudflare IPv6
-                    "2606:4700:4700::1001"    # Cloudflare IPv6 备用
-                    # ❌ 不要添加任何 IPv4 地址（1.1.1.1, 8.8.8.8）
-                ]
-            },
-            "inbounds": inbounds,
-            "outbounds": [
-                {
-                    "protocol": "freedom",
-                    "settings": {
-                        "domainStrategy": "UseIP"  # 查询 A+AAAA，DNS64 自动转换 A 为 AAAA
-                    },
-                    "tag": "direct"
-                },
-                {
-                    "protocol": "blackhole",
-                    "settings": {},
-                    "tag": "blocked"
-                }
-            ],
-            "routing": {
-                "domainStrategy": "IPIfNonMatch",  # 规则不匹配时使用 V2Ray DNS 解析
-                "rules": [
-                    {
-                        "type": "field",
-                        "ip": [
-                            "0.0.0.0/8",
-                            "10.0.0.0/8",
-                            "100.64.0.0/10",
-                            "127.0.0.0/8",
-                            "169.254.0.0/16",
-                            "172.16.0.0/12",
-                            "192.0.0.0/24",
-                            "192.0.2.0/24",
-                            "192.168.0.0/16",
-                            "198.18.0.0/15",
-                            "198.51.100.0/24",
-                            "203.0.113.0/24",
-                            "::1/128",
-                            "fc00::/7",
-                            "fe80::/10"
-                        ],
-                        "outboundTag": "blocked"
-                    }
-                ]
-            }
-        }
-        
-        return config
+        # 只返回 inbounds
+        return {"inbounds": inbounds}
     
     def write_v2ray_config(self, config: Dict):
         """
-        写入 V2Ray 配置文件
+        写入 V2Ray 配置文件（只更新 inbounds）
+        
+        策略：
+        1. 读取现有的 config.json（必须存在）
+        2. 只更新 inbounds（用户列表）
+        3. 保留所有其他配置（dns, outbounds, log, routing, 自定义优化等）
         
         Args:
-            config: V2Ray 配置字典
+            config: 包含新 inbounds 的配置字典
+        
+        Raises:
+            FileNotFoundError: 如果 config.json 不存在
         """
+        # 读取现有配置（必须存在）
+        if not self.config_json.exists():
+            raise FileNotFoundError(
+                f"❌ 错误: {self.config_json} 不存在！\n"
+                f"请先手动创建配置文件模板，或从服务器复制现有配置。\n"
+                f"config_service 只负责更新用户列表（inbounds），不会创建完整配置。"
+            )
+        
+        try:
+            with open(self.config_json, 'r', encoding='utf-8') as f:
+                existing_config = json.load(f)
+            print(f"  📖 读取现有配置: {self.config_json}")
+        except (json.JSONDecodeError, IOError) as e:
+            raise RuntimeError(f"❌ 无法读取 {self.config_json}: {e}")
+        
+        # 只更新 inbounds，保留所有其他配置
+        if 'inbounds' in config:
+            existing_config['inbounds'] = config['inbounds']
+            print(f"  ✅ 更新 inbounds ({len(config['inbounds'])} 个用户)")
+        
+        # 显示保留的配置
+        preserved = []
+        if 'dns' in existing_config:
+            preserved.append('DNS')
+        if 'outbounds' in existing_config:
+            preserved.append('outbounds')
+        if 'log' in existing_config:
+            preserved.append('log')
+        if 'routing' in existing_config:
+            preserved.append('routing')
+        
+        if preserved:
+            print(f"  ✅ 保留现有配置: {', '.join(preserved)}")
+        
+        # 写入更新后的配置
         with open(self.config_json, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
+            json.dump(existing_config, f, indent=2, ensure_ascii=False)
     
     def generate_caddyfile(self, domain: str, users: List[Dict],
                           v2ray_port: int = 10000, use_staging: bool = False) -> str:

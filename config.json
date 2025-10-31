@@ -6,12 +6,14 @@
   },
   "dns": {
     "servers": [
-        "localhost", 
-        "2606:4700:4700::64",
-        "2606:4700:4700::6400", 
-        "2606:4700:4700::1111",
-        "2606:4700:4700::1001"
-    ]
+      "2001:4860:4860::8888",
+      "2001:4860:4860::8844",
+      "2606:4700:4700::1111",
+      "2606:4700:4700::1001",
+      "localhost"
+    ],
+    "queryStrategy": "UseIP",
+    "disableCache": false
   },
   "inbounds": [
     {
@@ -34,6 +36,14 @@
       "protocol": "freedom",
       "settings": {
         "domainStrategy": "UseIP"
+      },
+      "streamSettings": {
+        "sockopt": {
+          "tcpKeepAliveInterval": 30,
+          "tcpKeepAliveIdle": 300,
+          "tcpFastOpen": true,
+          "mark": 255
+        }
       },
       "tag": "direct"
     },
