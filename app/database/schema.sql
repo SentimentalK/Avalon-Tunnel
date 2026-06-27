@@ -33,7 +33,7 @@ INSERT OR IGNORE INTO settings (key, value, description) VALUES
     ('v2ray_port', '10000', 'V2Ray 监听端口'),
     ('initialized', '0', '系统是否已初始化 (0: 否, 1: 是)'),
     ('domain', 'your-domain.com', '域名配置'),
-    ('api_secret', 'xinghan', 'API 认证密钥'),
+    ('api_secret', '', 'API 认证密钥'),
     ('v2ray_base_config', '{
   "log": {
     "loglevel": "debug",

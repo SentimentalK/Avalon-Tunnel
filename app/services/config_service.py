@@ -272,7 +272,7 @@ http:
     service-{email_clean}:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:{user_port}"
+          - url: "http://v2ray:{user_port}"
 """
             port_offset += 1
             
@@ -286,7 +286,7 @@ http:
     api-service:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:8000"
+          - url: "http://api:8000"
 """
         yaml_content += user_services
         

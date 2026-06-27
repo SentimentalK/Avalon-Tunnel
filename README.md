@@ -66,7 +66,7 @@ graph TD
 
 ### Prerequisites
 
-- **Server**: Ubuntu 20.04+ with a public IPv6 address.
+- **Server**: Ubuntu 20.04+ with a public IPv6 address (or local environment for testing).
 - **Domain**: An FQDN pointed to your server's IP address.
 - **Firewall**: Ports 80 and 443 must be open in your cloud provider's firewall.
 
@@ -100,12 +100,13 @@ vless://a1b2c3d4-...@your-domain.com:443?type=ws&security=tls&path=%2Fstream%2Fy
 
 ## Management
 
-### Core Services
+All operations are handled via standard docker compose commands:
 
 ```bash
-docker compose up -d      # Start all services (V2Ray, Traefik, API)
-docker compose stop       # Stop all services
-docker compose logs -f    # View logs
+docker compose up -d      # Start all services (V2Ray, Traefik, API) in background
+docker compose down       # Stop and remove containers
+docker compose logs -f    # Tail container logs
+docker compose restart    # Restart all containers
 ```
 
 ---

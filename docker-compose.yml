@@ -5,14 +5,15 @@ services:
     restart: unless-stopped
     volumes:
       - ./config.json:/etc/v2ray/config.json:ro
-    network_mode: host
     command: ["run", "-c", "/etc/v2ray/config.json"]
 
   traefik:
     image: traefik:v3.0
     container_name: avalon-traefik
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik_dynamic.yml:/etc/traefik/dynamic.yml:ro
@@ -29,10 +30,10 @@ services:
       dockerfile: Dockerfile
     container_name: avalon-api
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "8000:8000"
     volumes:
       - .:/app/config
       - ./data:/app/config/data
-      - ./scripts:/app/config/scripts
     environment:
       - BASE_DIR=/app/config

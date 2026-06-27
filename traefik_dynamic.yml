@@ -12,6 +12,15 @@ http:
       tls: {}
       priority: 50
 
+    # 用户: user@example.com
+    user-user-example-com:
+      rule: "Host(`your-domain.com`) && Path(`/stream/qe62YGMmApjZr3v81rQSjbi6qNce2S9x`)"
+      service: service-user-example-com
+      entryPoints:
+        - websecure
+      tls: {}
+      priority: 50
+
     # API 管理接口与文档路由
     api-router:
       rule: "Host(`your-domain.com`) && (PathPrefix(`/api`) || PathPrefix(`/docs`) || PathPrefix(`/redoc`) || Path(`/openapi.json`))"
@@ -35,9 +44,14 @@ http:
     api-service:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:8000"
+          - url: "http://api:8000"
 
     service-Morgan-avalon-tunnel-com:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:10000"
+          - url: "http://v2ray:10000"
+
+    service-user-example-com:
+      loadBalancer:
+        servers:
+          - url: "http://v2ray:10001"
