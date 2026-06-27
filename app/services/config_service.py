@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Avalon Tunnel - 配置服务模块
-负责生成和同步 V2Ray、Caddy 的配置文件
+负责生成和同步 V2Ray、Traefik 的配置文件
 """
 
 import json
@@ -10,6 +10,74 @@ import secrets
 import string
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# V2Ray 默认基础配置模板（当数据库为空且本地文件不存在时作为回退方案）
+DEFAULT_V2RAY_BASE_CONFIG = {
+    "log": {
+        "loglevel": "debug",
+        "access": "/var/log/v2ray/access.log",
+        "error": "/var/log/v2ray/error.log"
+    },
+    "dns": {
+        "servers": [
+            "2001:4860:4860::8888",
+            "2001:4860:4860::8844",
+            "2606:4700:4700::1111",
+            "2606:4700:4700::1001",
+            "localhost"
+        ],
+        "queryStrategy": "UseIP",
+        "disableCache": False
+    },
+    "outbounds": [
+        {
+            "protocol": "freedom",
+            "settings": {
+                "domainStrategy": "UseIP"
+            },
+            "streamSettings": {
+                "sockopt": {
+                    "tcpKeepAliveInterval": 30,
+                    "tcpKeepAliveIdle": 300,
+                    "tcpFastOpen": True,
+                    "mark": 255
+                }
+            },
+            "tag": "direct"
+        },
+        {
+            "protocol": "blackhole",
+            "settings": {},
+            "tag": "blocked"
+        }
+    ],
+    "routing": {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+            {
+                "type": "field",
+                "ip": [
+                    "0.0.0.0/8",
+                    "10.0.0.0/8",
+                    "100.64.0.0/10",
+                    "127.0.0.0/8",
+                    "169.254.0.0/16",
+                    "172.16.0.0/12",
+                    "192.0.0.0/24",
+                    "192.0.2.0/24",
+                    "192.168.0.0/16",
+                    "198.18.0.0/15",
+                    "198.51.100.0/24",
+                    "203.0.113.0/24",
+                    "::1/128",
+                    "fc00::/7",
+                    "fe80::/10"
+                ],
+                "outboundTag": "blocked"
+            }
+        ]
+    }
+}
 
 
 class ConfigService:
@@ -24,7 +92,7 @@ class ConfigService:
         """
         self.base_dir = Path(base_dir)
         self.config_json = self.base_dir / "config.json"
-        self.caddyfile = self.base_dir / "Caddyfile"
+        self.traefik_dynamic = self.base_dir / "traefik_dynamic.yml"
     
     @staticmethod
     def generate_secret_path(length: int = 32) -> str:
@@ -53,14 +121,8 @@ class ConfigService:
         
         Note:
             此方法只生成 inbounds，其他所有配置（dns, outbounds, log, routing）
-            都从现有的 config.json 读取并保留
-        
-        Security:
-            每个用户有独立的 inbound（端口 + 路径），确保：
-            - 用户 A 只能用 UUID-A + Path-A 连接
-            - 不能用 UUID-A + Path-B 连接（会被 V2Ray 拒绝）
+            都从数据库或基础模板中读取并保留
         """
-        # 为每个启用的用户创建独立的 inbound
         inbounds = []
         port_offset = 0
         
@@ -69,7 +131,7 @@ class ConfigService:
                 continue
             
             if not user.get('secret_path'):
-                print(f"  ⚠️  警告: 用户 {user['email']} 没有 secret_path，跳过")
+                print(f"  [Warning] 警告: 用户 {user['email']} 没有 secret_path，跳过")
                 continue
             
             inbounds.append({
@@ -88,95 +150,101 @@ class ConfigService:
                 "streamSettings": {
                     "network": "ws",
                     "wsSettings": {
-                        "path": f"/stream/{user['secret_path']}"  # ✅ UUID 和路径绑定
+                        "path": f"/stream/{user['secret_path']}"  # UUID 和路径绑定
                     }
                 },
                 "tag": f"inbound-{user['email']}"
             })
             port_offset += 1
         
-        # 只返回 inbounds
         return {"inbounds": inbounds}
     
-    def write_v2ray_config(self, config: Dict):
+    def write_v2ray_config(self, config: Dict, db = None):
         """
         写入 V2Ray 配置文件（只更新 inbounds）
         
         策略：
-        1. 读取现有的 config.json（必须存在）
-        2. 只更新 inbounds（用户列表）
-        3. 保留所有其他配置（dns, outbounds, log, routing, 自定义优化等）
-        
-        Args:
-            config: 包含新 inbounds 的配置字典
-        
-        Raises:
-            FileNotFoundError: 如果 config.json 不存在
+        1. 尝试从数据库读取配置基底模板
+        2. 如果数据库不可用，尝试读取现有的本地 config.json 文件
+        3. 如果两者均不存在，则使用硬编码的默认基础配置模板
+        4. 只更新 inbounds（用户列表），并写入 config.json
         """
-        # 读取现有配置（必须存在）
-        if not self.config_json.exists():
-            raise FileNotFoundError(
-                f"❌ 错误: {self.config_json} 不存在！\n"
-                f"请先手动创建配置文件模板，或从服务器复制现有配置。\n"
-                f"config_service 只负责更新用户列表（inbounds），不会创建完整配置。"
-            )
+        existing_config = None
         
-        try:
-            with open(self.config_json, 'r', encoding='utf-8') as f:
-                existing_config = json.load(f)
-            print(f"  📖 读取现有配置: {self.config_json}")
-        except (json.JSONDecodeError, IOError) as e:
-            raise RuntimeError(f"❌ 无法读取 {self.config_json}: {e}")
+        # 1. 尝试从数据库中获取基础配置
+        if db:
+            try:
+                base_config_str = db.get_setting('v2ray_base_config')
+                if base_config_str:
+                    existing_config = json.loads(base_config_str)
+                    print("  [Config] 从数据库加载 V2Ray 基础配置模板")
+            except Exception as e:
+                print(f"  [Warning] 无法从数据库读取基础配置: {e}")
+        
+        # 2. 从本地 config.json 读取
+        if not existing_config and self.config_json.exists():
+            try:
+                with open(self.config_json, 'r', encoding='utf-8') as f:
+                    existing_config = json.load(f)
+                print(f"  [Config] 读取现有本地配置: {self.config_json}")
+            except Exception as e:
+                print(f"  [Warning] 无法读取本地 {self.config_json}: {e}")
+        
+        # 3. 最终回退至硬编码基础配置
+        if not existing_config:
+            existing_config = DEFAULT_V2RAY_BASE_CONFIG.copy()
+            print("  [Warning] 使用默认硬编码 V2Ray 基础配置")
         
         # 只更新 inbounds，保留所有其他配置
         if 'inbounds' in config:
             existing_config['inbounds'] = config['inbounds']
-            print(f"  ✅ 更新 inbounds ({len(config['inbounds'])} 个用户)")
+            print(f"  [Config] 更新 inbounds ({len(config['inbounds'])} 个用户)")
         
-        # 显示保留的配置
-        preserved = []
-        if 'dns' in existing_config:
-            preserved.append('DNS')
-        if 'outbounds' in existing_config:
-            preserved.append('outbounds')
-        if 'log' in existing_config:
-            preserved.append('log')
-        if 'routing' in existing_config:
-            preserved.append('routing')
-        
-        if preserved:
-            print(f"  ✅ 保留现有配置: {', '.join(preserved)}")
-        
-        # 写入更新后的配置
+        # 确保目录存在并写入更新后的配置
+        self.config_json.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_json, 'w', encoding='utf-8') as f:
             json.dump(existing_config, f, indent=2, ensure_ascii=False)
-    
-    def generate_caddyfile(self, domain: str, users: List[Dict],
-                          v2ray_port: int = 10000, use_staging: bool = False) -> str:
+            
+    def generate_traefik_dynamic(self, domain: str, users: List[Dict],
+                                 v2ray_port: int = 10000) -> str:
         """
-        生成 Caddyfile 配置（Phase 2: 多用户多路径）
+        生成 Traefik 动态配置文件 (traefik_dynamic.yml)
         
         Args:
             domain: 域名
-            users: 用户列表，每个用户包含 secret_path
-            v2ray_port: V2Ray 监听端口
-            use_staging: 是否使用 Let's Encrypt Staging 环境（避免频率限制）
+            users: 用户列表
+            v2ray_port: V2Ray 起始端口
         
         Returns:
-            Caddyfile 内容
+            YAML 配置内容
         """
-        # TLS 配置（可选）
-        tls_config = ""
-        if use_staging:
-            tls_config = """
-    # 使用 Let's Encrypt Staging 环境（测试用，避免频率限制）
-    tls {
-        ca https://acme-staging-v02.api.letsencrypt.org/directory
-    }
+        # API 路由与伪装网默认路由
+        yaml_content = f"""# Avalon Tunnel - Traefik Dynamic Configuration
+# 自动生成，请勿手动编辑
+
+http:
+  routers:
+    # API 管理接口与文档路由
+    api-router:
+      rule: "Host(`{domain}`) && (PathPrefix(`/api`) || PathPrefix(`/docs`) || PathPrefix(`/redoc`) || Path(`/openapi.json`))"
+      service: api-service
+      entryPoints:
+        - websecure
+      tls: {{}}
+      priority: 100
+
+    # 根路径 - 伪装网站（静态/动态流量生成）
+    decoy-router:
+      rule: "Host(`{domain}`) && PathPrefix(`/`)"
+      service: api-service
+      entryPoints:
+        - websecure
+      tls: {{}}
+      priority: 1
 """
         
-        # 为每个用户生成一个 handle 块，转发到对应的 V2Ray 端口
-        user_handles = ""
+        user_routers = ""
+        user_services = ""
         port_offset = 0
         
         for user in users:
@@ -184,126 +252,83 @@ class ConfigService:
                 continue
             
             user_port = v2ray_port + port_offset
-            user_handles += f"""
-    # 用户: {user['email']} ({user['uuid']})
-    # V2Ray 端口: {user_port}
-    handle /stream/{user['secret_path']} {{
-        reverse_proxy 127.0.0.1:{user_port} {{
-            header_up Host {{host}}
-            header_up X-Real-IP {{remote}}
-            header_up X-Forwarded-For {{remote}}
-            header_up User-Agent {{http.request.header.User-Agent}}
-            header_up Upgrade {{http.request.header.Upgrade}}
-            header_up Connection {{http.request.header.Connection}}
-        }}
-    }}
+            # 清理邮箱格式用于作为 YAML 中的标识符
+            email_clean = user['email'].replace('@', '-').replace('.', '-')
+            
+            # 为每个用户绑定独立的 path，转发到独立的 V2Ray 监听端口
+            user_routers += f"""
+    # 用户: {user['email']}
+    user-{email_clean}:
+      rule: "Host(`{domain}`) && Path(`/stream/{user['secret_path']}`)"
+      service: service-{email_clean}
+      entryPoints:
+        - websecure
+      tls: {{}}
+      priority: 50
+"""
+            
+            # 反代到本地环回地址上 V2Ray 的对应端口
+            user_services += f"""
+    service-{email_clean}:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{user_port}"
 """
             port_offset += 1
-        
-        caddyfile_content = f"""# Avalon Tunnel - Caddy Configuration
-# 自动 TLS 证书申请和反向代理配置
-# Phase 2: 多用户多路径支持 + API 反向代理
-
-{domain} {{{tls_config}
-{user_handles}
-    # API 管理接口 - 反向代理到本地 8000 端口
-    handle /api/* {{
-        reverse_proxy 127.0.0.1:8000
-    }}
-    
-    # API 文档 - Swagger UI
-    handle /docs {{
-        reverse_proxy 127.0.0.1:8000
-    }}
-    
-    # API 文档 - ReDoc
-    handle /redoc {{
-        reverse_proxy 127.0.0.1:8000
-    }}
-    
-    # API OpenAPI JSON
-    handle /openapi.json {{
-        reverse_proxy 127.0.0.1:8000
-    }}
-    
-    # 根路径和所有其他路径 - 伪装网站（动态流量生成）
-    handle /* {{
-        reverse_proxy 127.0.0.1:8000
-    }}
-
-    # 安全头设置
-    header {{
-        # 隐藏服务器信息
-        -Server
-        Server "nginx/1.18.0"
-        
-        # 安全头
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        X-XSS-Protection "1; mode=block"
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        
-        # 防止缓存敏感路径
-        Cache-Control "no-cache, no-store, must-revalidate"
-    }}
-
-    # 日志配置（JSON 格式，包含 User-Agent 和 IP）
-    log {{
-        output file /var/log/caddy/access.log {{
-            roll_size 100mb
-            roll_keep 5
-        }}
-        format json
-    }}
-}}
+            
+        # 插入动态生成的路由
+        if user_routers:
+            yaml_content = yaml_content.replace("  routers:", "  routers:" + user_routers)
+            
+        # 拼接服务块
+        yaml_content += "\n  services:\n"
+        yaml_content += f"""    # API 及伪装网页服务
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8000"
 """
-        return caddyfile_content
-    
-    def write_caddyfile(self, content: str):
+        yaml_content += user_services
+        
+        return yaml_content
+        
+    def write_traefik_dynamic(self, content: str):
         """
-        写入 Caddyfile
+        写入 Traefik 动态配置文件
         
         Args:
-            content: Caddyfile 内容
+            content: Traefik 动态配置 YAML 内容
         """
-        with open(self.caddyfile, 'w', encoding='utf-8') as f:
+        self.traefik_dynamic.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.traefik_dynamic, 'w', encoding='utf-8') as f:
             f.write(content)
     
     def sync_all_configs(self, domain: str, users: List[Dict], 
-                        v2ray_port: int = 10000):
+                        v2ray_port: int = 10000, db = None):
         """
-        同步所有配置文件（Phase 2: 多用户多路径）
+        同步所有配置文件（V2Ray json 与 Traefik dynamic yml）
         
         Args:
             domain: 域名
             users: 用户列表（每个用户包含 uuid, email, secret_path）
             v2ray_port: V2Ray 端口
+            db: 数据库实例，用于提取 v2ray_base_config
         """
-        import os
+        print("[Config] 正在生成配置文件...")
         
-        print("🔄 正在生成配置文件...")
-        
-        # 生成 V2Ray 配置
+        # 1. 生成 V2Ray 配置文件
         v2ray_config = self.generate_v2ray_config(users, v2ray_port)
-        self.write_v2ray_config(v2ray_config)
-        print(f"  ✅ V2Ray 配置已生成 ({len(users)} 个用户)")
+        self.write_v2ray_config(v2ray_config, db)
+        print(f"  [Config] V2Ray 配置已生成 ({len(users)} 个用户)")
         
-        # 检查是否使用 Staging 环境（通过环境变量控制）
-        use_staging = os.getenv('ACME_STAGING', '').lower() in ('1', 'true', 'yes')
+        # 2. 生成 Traefik 动态路由配置文件
+        traefik_content = self.generate_traefik_dynamic(domain, users, v2ray_port)
+        self.write_traefik_dynamic(traefik_content)
+        print(f"  [Config] Traefik 动态配置已生成 ({len(users)} 个独立路径)")
         
-        # 生成 Caddyfile（多用户多路径）
-        caddyfile = self.generate_caddyfile(domain, users, v2ray_port, use_staging)
-        self.write_caddyfile(caddyfile)
-        
-        if use_staging:
-            print(f"  ✅ Caddy 配置已生成（使用 Staging 环境）")
-            print(f"  ⚠️  注意：Staging 证书不被浏览器信任，仅用于测试")
-        else:
-            print(f"  ✅ Caddy 配置已生成 ({len(users)} 个独立路径)")
-        
-        print(f"  📍 域名: {domain}")
-        print(f"  🔌 V2Ray 端口: {v2ray_port}")
-        print(f"  ⚠️  注意：V2Ray 需要重启才能应用配置，Caddy 自动热加载")
+        print(f"  [Config] 域名: {domain}")
+        print(f"  [Config] V2Ray 端口范围: {v2ray_port} - {v2ray_port + len(users) - 1 if users else v2ray_port}")
+        print(f"  [Config] Traefik 将通过文件监听机制自动加载路由变动")
     
     def generate_vless_link(self, uuid: str, domain: str, secret_path: str,
                            email: str = "Avalon-Tunnel") -> str:
@@ -324,7 +349,7 @@ class ConfigService:
         params = {
             'type': 'ws',
             'security': 'tls',
-            'path': f'/stream/{secret_path}',  # 新格式：/stream/<secret>
+            'path': f'/stream/{secret_path}',
             'host': domain,
             'sni': domain
         }
@@ -337,17 +362,16 @@ class ConfigService:
 
 if __name__ == "__main__":
     # 测试配置服务
-    print("🧪 测试配置服务...")
+    print("[Test] 测试配置服务...")
     
     import tempfile
-    import os
     
     with tempfile.TemporaryDirectory() as tmpdir:
         service = ConfigService(tmpdir)
         
         # 测试生成秘密路径
         secret = ConfigService.generate_secret_path()
-        print(f"✅ 生成秘密路径: {secret}")
+        print(f"[Test] 生成秘密路径: {secret}")
         
         # 测试生成配置
         test_users = [
@@ -358,7 +382,7 @@ if __name__ == "__main__":
         service.sync_all_configs(
             domain="test.example.com",
             users=test_users,
-            secret_path=secret
+            v2ray_port=10000
         )
         
         # 测试生成链接
@@ -368,7 +392,6 @@ if __name__ == "__main__":
             secret_path=secret,
             email="user1@test.com"
         )
-        print(f"✅ 生成 VLESS 链接:\n  {link}")
+        print(f"[Test] 生成 VLESS 链接:\n  {link}")
         
-        print("\n🎉 所有测试通过！")
-
+        print("\n[Success] 所有测试通过！")

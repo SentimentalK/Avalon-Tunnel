@@ -1,6 +1,6 @@
 {
   "log": {
-    "loglevel": "warning",
+    "loglevel": "debug",
     "access": "/var/log/v2ray/access.log",
     "error": "/var/log/v2ray/error.log"
   },
@@ -15,22 +15,6 @@
     "queryStrategy": "UseIP",
     "disableCache": false
   },
-  "inbounds": [
-    {
-      "port": 10000,
-      "protocol": "vless",
-      "settings": {
-        "clients": [],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "ws",
-        "wsSettings": {
-          "path": "/avalon-secret-path"
-        }
-      }
-    }
-  ],
   "outbounds": [
     {
       "protocol": "freedom",
@@ -78,5 +62,28 @@
         "outboundTag": "blocked"
       }
     ]
-  }
+  },
+  "inbounds": [
+    {
+      "port": 10000,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "level": 0,
+            "email": "Morgan@avalon-tunnel.com"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/stream/KBELXYp1LtKvGN4ITmio4TYwhIakKgep"
+        }
+      },
+      "tag": "inbound-Morgan@avalon-tunnel.com"
+    }
+  ]
 }

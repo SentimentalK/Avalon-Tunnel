@@ -1,0 +1,38 @@
+# Traefik Static Configuration (traefik.yml)
+# 静态配置文件，定义 Entrypoints、Providers 和 ACME 证书解析器
+
+api:
+  dashboard: false
+  insecure: false
+
+# 端口入口定义
+entryPoints:
+  # HTTP 入口（默认重定向到 HTTPS）
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  # HTTPS 入口（绑定默认证书解析器为 letsencrypt）
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+
+# 动态配置提供商：使用文件提供商，并开启实时监听自动热加载
+providers:
+  file:
+    filename: "/etc/traefik/dynamic.yml"
+    watch: true
+
+# 证书自动申请与解析配置
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "${ACME_EMAIL:-admin@your-domain.com}"
+      storage: "/acme/acme.json"
+      httpChallenge:
+        entryPoint: web

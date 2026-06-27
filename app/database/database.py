@@ -32,6 +32,9 @@ class Database:
         
         # 初始化数据库
         self._init_database()
+        
+        # 自动执行系统自举
+        self._bootstrap_system()
     
     def _get_connection(self) -> sqlite3.Connection:
         """获取数据库连接"""
@@ -55,7 +58,48 @@ class Database:
             conn.commit()
         finally:
             conn.close()
+            
+        # 如果是首次初始化，尝试从环境变量导入初始设置
+        if self.is_first_init:
+            import os
+            domain_env = os.getenv("DOMAIN")
+            if domain_env:
+                try:
+                    self.set_setting("domain", domain_env, "域名配置 (从环境变量导入)")
+                    print(f"  [Database] 已从环境变量导入 DOMAIN: {domain_env}")
+                except Exception as e:
+                    print(f"  [Warning] 导入 DOMAIN 失败: {e}")
+            api_secret_env = os.getenv("API_SECRET")
+            if api_secret_env:
+                try:
+                    self.set_setting("api_secret", api_secret_env, "API 认证密钥 (从环境变量导入)")
+                    print(f"  [Database] 已从环境变量导入 API_SECRET")
+                except Exception as e:
+                    print(f"  [Warning] 导入 API_SECRET 失败: {e}")
     
+    def _bootstrap_system(self):
+        """自动执行首次部署所需的系统级自举逻辑"""
+        try:
+            if not self.is_initialized():
+                print("  [Database] 检测到首次运行，正在自动执行系统初始化自举...")
+                
+                # 检查默认用户 Morgan，如果存在且没有秘密路径，则生成并分配一个
+                morgan_email = 'Morgan@avalon-tunnel.com'
+                morgan = self.get_user_by_email(morgan_email)
+                if morgan:
+                    if not morgan.get('secret_path') or morgan.get('secret_path') == '':
+                        import secrets
+                        import string
+                        alphabet = string.ascii_letters + string.digits
+                        secret_path = ''.join(secrets.choice(alphabet) for _ in range(32))
+                        self.update_user(morgan['uuid'], secret_path=secret_path)
+                        print(f"  [Database] 已为默认用户 {morgan_email} 分配秘密路径: /{secret_path[:16]}...")
+                
+                self.mark_as_initialized()
+                print("  [Database] 系统初始化自举完成")
+        except Exception as e:
+            print(f"  [Warning] 系统初始化自举失败: {e}")
+
     def is_initialized(self) -> bool:
         """检查系统是否已初始化"""
         setting = self.get_setting('initialized')
@@ -364,7 +408,7 @@ class Database:
 
 if __name__ == "__main__":
     # 测试数据库功能
-    print("🧪 测试数据库模块...")
+    print("[Test] 测试数据库模块...")
     
     # 使用临时数据库测试
     import tempfile
@@ -374,27 +418,28 @@ if __name__ == "__main__":
         test_db_path = os.path.join(tmpdir, "test.db")
         db = Database(test_db_path)
         
-        print("✅ 数据库初始化成功")
+        print("[Database] 数据库初始化成功")
         
         # 测试创建用户
         user = db.create_user(
             email="test@avalon.com",
+            secret_path="test-secret-path",
             notes="测试用户"
         )
-        print(f"✅ 创建用户: {user['email']} (UUID: {user['uuid']})")
+        print(f"[Database] 创建用户: {user['email']} (UUID: {user['uuid']})")
         
         # 测试查询用户
         users = db.get_all_users()
-        print(f"✅ 查询到 {len(users)} 个用户")
+        print(f"[Database] 查询到 {len(users)} 个用户")
         
         # 测试设置
         db.set_setting("secret_path", "test-secret-path")
         secret_path = db.get_setting("secret_path")
-        print(f"✅ 设置秘密路径: {secret_path}")
+        print(f"[Database] 设置秘密路径: {secret_path}")
         
         # 测试审计日志
         logs = db.get_audit_logs()
-        print(f"✅ 审计日志记录: {len(logs)} 条")
+        print(f"[Database] 审计日志记录: {len(logs)} 条")
         
-        print("\n🎉 所有测试通过！")
+        print("\n[Success] 所有测试通过！")
 

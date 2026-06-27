@@ -49,33 +49,53 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """
-    应用启动时初始化数据库和服务
+    应用启动时初始化数据库和服务，并自动生成配置文件
     """
-    print("🚀 Avalon Tunnel API 服务器启动中...")
+    print("Avalon Tunnel API 服务器启动中...")
     
-    # 读取环境变量
-    domain = os.getenv('DOMAIN', 'your-domain.com')
+    # 基础目录
     base_dir = os.getenv('BASE_DIR', '/app/config')
     
     # 初始化数据库
     db_path = f"{base_dir}/data/avalon.db"
     db = Database(db_path)
-    print(f"  ✅ 数据库已连接: {db_path}")
+    print(f"  [Database] 数据库已连接: {db_path}")
+    
+    # 将数据库实例存入 App State，以便认证拦截器等处使用
+    app.state.db = db
+    
+    # 从数据库获取 Domain，若没有则回退到环境变量或默认值
+    db_domain = db.get_setting('domain')
+    if db_domain:
+        domain = db_domain
+    else:
+        domain = os.getenv('DOMAIN', 'your-domain.com')
+        db.set_setting('domain', domain, '域名配置')
     
     # 初始化配置服务
     config_service = ConfigService(base_dir)
-    print(f"  ✅ 配置服务已初始化")
+    print(f"  [Service] 配置服务已初始化")
+    
+    # 启动时自动生成并同步一次配置文件，保证只要有数据库在就能瞬间重建运行环境
+    try:
+        print("  [Config] 正在自动生成/同步配置文件...")
+        users = db.get_all_users(enabled_only=True)
+        v2ray_port = int(db.get_setting('v2ray_port') or 10000)
+        config_service.sync_all_configs(domain, users, v2ray_port, db)
+        print("  [Config] 配置文件已自动生成/同步成功")
+    except Exception as e:
+        print(f"  [Warning] 启动自动同步配置失败: {e}")
     
     # 初始化 API 路由服务
     init_services(db, config_service, domain)
-    print(f"  ✅ API 路由已初始化")
-    print(f"  📍 域名: {domain}")
+    print(f"  [API] API 路由已初始化")
+    print(f"  [API] 域名: {domain}")
     print()
     print("=" * 70)
-    print("🎉 Avalon Tunnel API 服务器已启动")
+    print("Avalon Tunnel API 服务器已启动")
     print("=" * 70)
-    print(f"  📖 API 文档: http://0.0.0.0:8000/docs")
-    print(f"  🔗 健康检查: http://0.0.0.0:8000/api/health")
+    print(f"  [Doc] API 文档: http://0.0.0.0:8000/docs")
+    print(f"  [Health] 健康检查: http://0.0.0.0:8000/api/health")
     print("=" * 70)
 
 
@@ -85,7 +105,7 @@ async def shutdown_event():
     """
     应用关闭时的清理工作
     """
-    print("🛑 Avalon Tunnel API 服务器正在关闭...")
+    print("Avalon Tunnel API 服务器正在关闭...")
 
 
 # 注册 API 路由

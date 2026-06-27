@@ -103,7 +103,7 @@ class UserService:
     
     def reload_configs(self, domain: str) -> Dict:
         """
-        重新生成配置文件并重启 V2Ray
+        重新生成配置文件并通知配置已更新（Traefik 将自动监听热加载）
         
         Args:
             domain: 域名
@@ -120,37 +120,14 @@ class UserService:
             self.config_service.sync_all_configs(
                 domain=domain,
                 users=users,
-                v2ray_port=v2ray_port
+                v2ray_port=v2ray_port,
+                db=self.db
             )
             
-            # 3. 重启 V2Ray 容器（Caddy 自动热加载）
-            # 使用外部脚本，避免在容器内安装 Docker CLI
-            restart_script = Path(__file__).parent.parent.parent / 'scripts' / 'restart-v2ray.sh'
-            result = subprocess.run(
-                ['bash', str(restart_script)],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                return {
-                    'success': True,
-                    'message': f'配置已更新，V2Ray 已重启（{len(users)} 个用户）',
-                    'user_count': len(users)
-                }
-            else:
-                return {
-                    'success': False,
-                    'message': f'V2Ray 重启失败: {result.stderr}',
-                    'user_count': len(users)
-                }
-        
-        except subprocess.TimeoutExpired:
             return {
-                'success': False,
-                'message': 'V2Ray 重启超时（30秒）',
-                'user_count': len(users) if 'users' in locals() else 0
+                'success': True,
+                'message': f'配置生成成功，Traefik 已自动热加载。（{len(users)} 个用户）',
+                'user_count': len(users)
             }
         except Exception as e:
             return {

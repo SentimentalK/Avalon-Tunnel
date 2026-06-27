@@ -1,0 +1,43 @@
+# Avalon Tunnel - Traefik Dynamic Configuration
+# 自动生成，请勿手动编辑
+
+http:
+  routers:
+    # 用户: Morgan@avalon-tunnel.com
+    user-Morgan-avalon-tunnel-com:
+      rule: "Host(`your-domain.com`) && Path(`/stream/KBELXYp1LtKvGN4ITmio4TYwhIakKgep`)"
+      service: service-Morgan-avalon-tunnel-com
+      entryPoints:
+        - websecure
+      tls: {}
+      priority: 50
+
+    # API 管理接口与文档路由
+    api-router:
+      rule: "Host(`your-domain.com`) && (PathPrefix(`/api`) || PathPrefix(`/docs`) || PathPrefix(`/redoc`) || Path(`/openapi.json`))"
+      service: api-service
+      entryPoints:
+        - websecure
+      tls: {}
+      priority: 100
+
+    # 根路径 - 伪装网站（静态/动态流量生成）
+    decoy-router:
+      rule: "Host(`your-domain.com`) && PathPrefix(`/`)"
+      service: api-service
+      entryPoints:
+        - websecure
+      tls: {}
+      priority: 1
+
+  services:
+    # API 及伪装网页服务
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8000"
+
+    service-Morgan-avalon-tunnel-com:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10000"

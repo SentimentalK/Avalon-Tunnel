@@ -31,7 +31,75 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT OR IGNORE INTO settings (key, value, description) VALUES
     ('secret_path', '', 'V2Ray WebSocket 秘密路径 (自动生成)'),
     ('v2ray_port', '10000', 'V2Ray 监听端口'),
-    ('initialized', '0', '系统是否已初始化 (0: 否, 1: 是)');
+    ('initialized', '0', '系统是否已初始化 (0: 否, 1: 是)'),
+    ('domain', 'your-domain.com', '域名配置'),
+    ('api_secret', 'xinghan', 'API 认证密钥'),
+    ('v2ray_base_config', '{
+  "log": {
+    "loglevel": "debug",
+    "access": "/var/log/v2ray/access.log",
+    "error": "/var/log/v2ray/error.log"
+  },
+  "dns": {
+    "servers": [
+      "2001:4860:4860::8888",
+      "2001:4860:4860::8844",
+      "2606:4700:4700::1111",
+      "2606:4700:4700::1001",
+      "localhost"
+    ],
+    "queryStrategy": "UseIP",
+    "disableCache": false
+  },
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIP"
+      },
+      "streamSettings": {
+        "sockopt": {
+          "tcpKeepAliveInterval": 30,
+          "tcpKeepAliveIdle": 300,
+          "tcpFastOpen": true,
+          "mark": 255
+        }
+      },
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "settings": {},
+      "tag": "blocked"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "0.0.0.0/8",
+          "10.0.0.0/8",
+          "100.64.0.0/10",
+          "127.0.0.0/8",
+          "169.254.0.0/16",
+          "172.16.0.0/12",
+          "192.0.0.0/24",
+          "192.0.2.0/24",
+          "192.168.0.0/16",
+          "198.18.0.0/15",
+          "198.51.100.0/24",
+          "203.0.113.0/24",
+          "::1/128",
+          "fc00::/7",
+          "fe80::/10"
+        ],
+        "outboundTag": "blocked"
+      }
+    ]
+  }
+}', 'V2Ray 基础配置模板');
 
 -- 插入默认用户 (Morgan)
 -- UUID 和 SECRET_PATH 在首次部署时由 Python 程序填充
