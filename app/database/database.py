@@ -99,6 +99,29 @@ class Database:
                 
                 self.mark_as_initialized()
                 print("  [Database] 系统初始化自举完成")
+            
+            # 自动迁移已存在的数据库中的 DNS 设置（将 localhost, 8.8.8.8, 1.1.1.1 提到最前面，避免 IPv6 域名解析超时）
+            try:
+                import json
+                base_config_str = self.get_setting('v2ray_base_config')
+                if base_config_str:
+                    base_config = json.loads(base_config_str)
+                    dns_config = base_config.get('dns', {})
+                    servers = dns_config.get('servers', [])
+                    if servers and servers[0] != "localhost" and "2001:4860:4860::8844" in servers:
+                        new_servers = [
+                            "localhost",
+                            "8.8.8.8",
+                            "1.1.1.1",
+                            "2001:4860:4860::8888",
+                            "2606:4700:4700::1111"
+                        ]
+                        dns_config['servers'] = new_servers
+                        base_config['dns'] = dns_config
+                        self.set_setting('v2ray_base_config', json.dumps(base_config, indent=2, ensure_ascii=False))
+                        print("  [Database] 已自动将现有数据库中的 V2Ray DNS 配置升级为优先使用 IPv4/Localhost")
+            except Exception as e:
+                print(f"  [Warning] 自动升级 DNS 设置失败: {e}")
         except Exception as e:
             print(f"  [Warning] 系统初始化自举失败: {e}")
 

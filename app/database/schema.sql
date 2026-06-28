@@ -42,11 +42,11 @@ INSERT OR IGNORE INTO settings (key, value, description) VALUES
   },
   "dns": {
     "servers": [
+      "localhost",
+      "8.8.8.8",
+      "1.1.1.1",
       "2001:4860:4860::8888",
-      "2001:4860:4860::8844",
-      "2606:4700:4700::1111",
-      "2606:4700:4700::1001",
-      "localhost"
+      "2606:4700:4700::1111"
     ],
     "queryStrategy": "UseIP",
     "disableCache": false
