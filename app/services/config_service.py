@@ -230,7 +230,6 @@ http:
       service: api-service
       entryPoints:
         - websecure
-      tls: {{}}
       priority: 100
 
     # 根路径 - 伪装网站（静态/动态流量生成）
@@ -239,7 +238,6 @@ http:
       service: api-service
       entryPoints:
         - websecure
-      tls: {{}}
       priority: 1
 """
         
@@ -263,7 +261,6 @@ http:
       service: service-{email_clean}
       entryPoints:
         - websecure
-      tls: {{}}
       priority: 50
 """
             
