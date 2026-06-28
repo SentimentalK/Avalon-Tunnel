@@ -59,23 +59,25 @@ class Database:
         finally:
             conn.close()
             
-        # 如果是首次初始化，尝试从环境变量导入初始设置
-        if self.is_first_init:
-            import os
-            domain_env = os.getenv("DOMAIN")
-            if domain_env:
-                try:
-                    self.set_setting("domain", domain_env, "域名配置 (从环境变量导入)")
-                    print(f"  [Database] 已从环境变量导入 DOMAIN: {domain_env}")
-                except Exception as e:
-                    print(f"  [Warning] 导入 DOMAIN 失败: {e}")
-            api_secret_env = os.getenv("API_SECRET")
-            if api_secret_env:
-                try:
-                    self.set_setting("api_secret", api_secret_env, "API 认证密钥 (从环境变量导入)")
-                    print(f"  [Database] 已从环境变量导入 API_SECRET")
-                except Exception as e:
-                    print(f"  [Warning] 导入 API_SECRET 失败: {e}")
+        # 尝试从环境变量导入/更新设置（如果数据库中为空或为默认占位符）
+        import os
+        domain_env = os.getenv("DOMAIN")
+        current_domain = self.get_setting("domain")
+        if domain_env and (not current_domain or current_domain == "your-domain.com"):
+            try:
+                self.set_setting("domain", domain_env, "域名配置 (从环境变量导入/更新)")
+                print(f"  [Database] 已从环境变量导入/更新 DOMAIN: {domain_env}")
+            except Exception as e:
+                print(f"  [Warning] 导入 DOMAIN 失败: {e}")
+        
+        api_secret_env = os.getenv("API_SECRET")
+        current_secret = self.get_setting("api_secret")
+        if api_secret_env and (not current_secret or current_secret == ""):
+            try:
+                self.set_setting("api_secret", api_secret_env, "API 认证密钥 (从环境变量导入/更新)")
+                print(f"  [Database] 已从环境变量导入/更新 API_SECRET")
+            except Exception as e:
+                print(f"  [Warning] 导入 API_SECRET 失败: {e}")
     
     def _bootstrap_system(self):
         """自动执行首次部署所需的系统级自举逻辑"""
