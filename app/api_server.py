@@ -116,7 +116,7 @@ app.include_router(router)
 
 # 配置路径
 BASE_DIR = Path(os.getenv('BASE_DIR', '.')).resolve()
-PUBLIC_DIR = BASE_DIR / 'public'
+PUBLIC_DIR = Path(__file__).parent.parent / 'public'
 VIDEO_FILE = PUBLIC_DIR / 'video.mp4'
 VIDEO_FILE_2 = PUBLIC_DIR / 'video2.mp4'  # 第二个视频
 CHAT_CORPUS_FILE = PUBLIC_DIR / 'chat_corpus.txt'
