@@ -59,11 +59,11 @@ class Database:
         finally:
             conn.close()
             
-        # 尝试从环境变量导入/更新设置（如果数据库中为空或为默认占位符）
+        # 尝试从环境变量导入/更新设置（以环境变量作为容器环境下的最终事实来源）
         import os
         domain_env = os.getenv("DOMAIN")
         current_domain = self.get_setting("domain")
-        if domain_env and (not current_domain or current_domain == "your-domain.com"):
+        if domain_env and domain_env != current_domain:
             try:
                 self.set_setting("domain", domain_env, "域名配置 (从环境变量导入/更新)")
                 print(f"  [Database] 已从环境变量导入/更新 DOMAIN: {domain_env}")
@@ -72,7 +72,7 @@ class Database:
         
         api_secret_env = os.getenv("API_SECRET")
         current_secret = self.get_setting("api_secret")
-        if api_secret_env and (not current_secret or current_secret == ""):
+        if api_secret_env and api_secret_env != current_secret:
             try:
                 self.set_setting("api_secret", api_secret_env, "API 认证密钥 (从环境变量导入/更新)")
                 print(f"  [Database] 已从环境变量导入/更新 API_SECRET")
